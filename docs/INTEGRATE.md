@@ -1,6 +1,6 @@
-# Using hive-memory inside another harness
+# Using strata-memory inside another harness
 
-hive-memory is an **external** context-curation layer: it wraps your existing
+strata-memory is an **external** context-curation layer: it wraps your existing
 LLM backend and curates every conversation into a bounded, high-relevance
 context window. It does not replace your harness; it sits in front of the
 model. Three integration modes, from zero-code to deep.
@@ -8,7 +8,7 @@ model. Three integration modes, from zero-code to deep.
 ## Mode A: OpenAI-compatible swap (zero code, minutes)
 
 Start the studio once; it serves a real OpenAI-compatible endpoint that curates
-every request through the hive:
+every request through the strata:
 
 ```powershell
 .\.venv\Scripts\python -m harness --setup
@@ -23,12 +23,12 @@ canned replies, not real model output; do not point a client at it.)
 
 Any client that accepts a `baseURL` + model id can use it. The API key is
 ignored locally (send anything, e.g. `lm-studio`). Conversations are keyed by
-the `X-Hive-Conversation` header, then the payload's `user` field, then
+the `X-Strata-Conversation` header, then the payload's `user` field, then
 `"default"`.
 
 ### OpenCode
 
-Copy `docs/opencode.hive.example.json` → `opencode.json` (project root or
+Copy `docs/opencode.strata.example.json` → `opencode.json` (project root or
 `~/.config/opencode/`), then restart opencode; config is loaded once at
 startup:
 
@@ -36,21 +36,21 @@ startup:
 {
   "$schema": "https://opencode.ai/config.json",
   "provider": {
-    "hive-memory": {
+    "strata-memory": {
       "npm": "@ai-sdk/openai-compatible",
-      "name": "Hive Memory (curated context)",
+      "name": "Strata Memory (curated context)",
       "options": {
         "baseURL": "http://127.0.0.1:8765/v1/openai"
       },
       "models": {
         "prism-ml/bonsai-27b": {
-          "name": "bonsai-27b via Hive",
+          "name": "bonsai-27b via Strata",
           "tool_call": true
         }
       }
     }
   },
-  "model": "hive-memory/prism-ml/bonsai-27b"
+  "model": "strata-memory/prism-ml/bonsai-27b"
 }
 ```
 
@@ -59,7 +59,7 @@ be one the studio's backend can serve (list them at
 `http://127.0.0.1:8765/v1/models`). `"tool_call": true` declares the model can
 emit tool calls, opencode needs this to edit files/run commands. Drop it if
 your backend errors on tool calls. For a multi-project setup, give each
-project its own `X-Hive-Conversation` header so stores stay isolated.
+project its own `X-Strata-Conversation` header so stores stay isolated.
 
 ### dsh / other OpenAI-compatible harnesses
 
@@ -69,37 +69,37 @@ an api key of `lm-studio`. The studio passes sampling parameters through
 
 ### How it behaves
 
-- Every user turn goes through the hive: classify → route → score → assemble →
+- Every user turn goes through the strata: classify → route → score → assemble →
   generate, inside a per-conversation store.
-- Conversations are isolated by `conversation_id`; reset with `POST /v1/hive/reset`.
+- Conversations are isolated by `conversation_id`; reset with `POST /v1/strata/reset`.
 - Reasoning models: pass `enable_thinking=false` in client params if the model
   honors it, and note that a small `max_tokens` cap yields empty visible replies
   on models that burn output on hidden CoT (see `docs/INSTALL.md` §8).
-- Watch it curate in real time: `GET /v1/hive/state` (or the studio UI).
+- Watch it curate in real time: `GET /v1/strata/state` (or the studio UI).
 
 ## Mode B, Python facade (build your own)
 
 The system is a normal pip package with one import surface:
 
 ```python
-from hive import Hive, HiveConfig, UltraSmallDrone, LMStudioBackend
+from strata import Strata, HiveConfig, UltraSmallDrone, LMStudioBackend
 
-hive = Hive(
+strata = Strata(
     config=HiveConfig(),                      # budgets, decay, drift thresholds
     ultra=UltraSmallDrone(),                  # ~60 MB CPU drone (~5 ms/query)
     backend=LMStudioBackend(base_url="http://localhost:1234"),
 )
 
-result = hive.process_turn("what did we decide about auth?")
+result = strata.process_turn("what did we decide about auth?")
 print(result.reply)          # the model's answer, generated under curated context
 print(result.assembled)      # exactly what the model saw (content + token budget)
 ```
 
-Per-conversation isolation is manual: call `hive.reset_conversation()` between
+Per-conversation isolation is manual: call `strata.reset_conversation()` between
 conversations (one store per conversation). Any OpenAI-compatible backend works
 (`OpenAICompatBackend`), including hosted providers, keys live in
 `providers.local.json` (gitignored) or the `HARNESS_PROVIDERS_FILE` env var.
-`hive/` never imports from the bench or the studio, so it drops into any
+`strata/` never imports from the bench or the studio, so it drops into any
 project cleanly.
 
 ## Mode C, dsh plugin (deepest integration)
@@ -109,7 +109,7 @@ defines a full plugin contract; see `HARNESS-SPEC.md` §3.1:
 
 1. The plugin listens at **`agent/pre-step`**: the documented extension point
    for "decides what the model sees".
-2. It calls the sidecar `POST /v1/hive/turn` with
+2. It calls the sidecar `POST /v1/strata/turn` with
    `{query, conversation_id, model?}` and rewrites the system prompt with the
    curated context (single leading system message, strict chat templates
    require it).
@@ -139,8 +139,8 @@ node carrier, SDK editable installs, llama-server), run it once, then
 | **Strict chat templates** | The model rejects a system message that isn't first | The studio always merges curated context into the leading system message, keep client system messages first too |
 | **Tool calls** | Some GGUFs/backends error on `tools:` payloads | Set `tool_call: false` (or drop it) in the client model config; opencode then goes text-only |
 | **Single-slot servers** | Requests queue; concurrency doesn't speed up | Raise llama.cpp `-np`/LM Studio parallel slots for multi-request workloads |
-| **`max_tokens` is a ceiling, not a target** | Small caps truncate replies (or yield nothing on thinking models) | Keep 400+ tokens for normal turns; the hive's generation headroom reserves 2048 |
+| **`max_tokens` is a ceiling, not a target** | Small caps truncate replies (or yield nothing on thinking models) | Keep 400+ tokens for normal turns; the strata's generation headroom reserves 2048 |
 | **Prefix caching** | TTFT grows with context when the pinned prefix changes | Keep the studio's pinned prefix stable; don't rewrite the leading system message yourself |
-| **Conversation isolation** | One store per conversation id; shared ids bleed context | Always set `X-Hive-Conversation` (or `user`) per project/session |
+| **Conversation isolation** | One store per conversation id; shared ids bleed context | Always set `X-Strata-Conversation` (or `user`) per project/session |
 | **API key is cosmetic locally** | Any string works against LM Studio | Use real keys in `providers.local.json` only for hosted providers |
-| **Context window size** | Windows ≥8k verified; the hive's budget (1-6k) never binds | Nothing to do, the budget is inside any modern window |
+| **Context window size** | Windows ≥8k verified; the strata's budget (1-6k) never binds | Nothing to do, the budget is inside any modern window |

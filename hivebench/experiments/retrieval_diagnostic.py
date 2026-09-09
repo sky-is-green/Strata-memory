@@ -14,8 +14,8 @@ Reframed for model-fidelity honesty (2026-08-22, live3):
 The old design classified a turn as "retrievable" from the *fixture's* prior
 text. But a live generative model does not reproduce the fixture's canonical
 answers — it states its own (often different) facts. If the model never said
-the expected fact, no store could contain it, so no hive could retrieve it;
-measuring recall against those facts conflates *model fidelity* with *hive
+the expected fact, no store could contain it, so no strata could retrieve it;
+measuring recall against those facts conflates *model fidelity* with *strata
 retrieval quality*. The reframe separates the two:
 
 - ``stated_facts``: the expected answer-facts the model **actually stated** in
@@ -24,9 +24,9 @@ retrieval quality*. The reframe separates the two:
   **model-fidelity bound** on recall.
 - ``retrieval_recall`` / ``retrieval_recall_retrievable``: hits over turns
   where at least one fact was actually stated (``stated_facts`` non-empty) —
-  the hive's honest retrieval quality.
+  the strata's honest retrieval quality.
 - ``perfect_hive_ceiling``: share of measurable turns whose facts were *all*
-  stated — the maximum recall any perfect hive could achieve on this run.
+  stated — the maximum recall any perfect strata could achieve on this run.
 
 Per sampled turn it also reports:
   - ``answer_facts``: the distinctive fact terms the fixture's ground-truth
@@ -173,10 +173,10 @@ def compute_retrieval_vs_fixture(records: list[dict], conversations: list[dict])
 
     Honest-retrieval reframe: a turn is only scored on the facts the model
     actually stated in prior *stored* reply chunks (hedges excluded, matching
-    the hive's store). Facts the model never said are model-fidelity bound, not
-    hive failures.
+    the strata's store). Facts the model never said are model-fidelity bound, not
+    strata failures.
     """
-    from cortex.hive import Hive
+    from cortex.strata import Hive
 
     answer_map = _fixture_answer_map(conversations)
     # fixture text before each user query, per conversation (for first-mention)
@@ -198,7 +198,7 @@ def compute_retrieval_vs_fixture(records: list[dict], conversations: list[dict])
         cid = conv.get("conversation_id", "unknown")
         conv_answers = answer_map.get(cid, {})
         conv_prior = prior_map.get(cid, {})
-        # text the hive actually stored before each turn: query chunks always,
+        # text the strata actually stored before each turn: query chunks always,
         # reply chunks only when not filtered as hedges (mirrors Hive.process_turn)
         prior_stored = ""
         for t in conv.get("turns", []):
@@ -252,7 +252,7 @@ def compute_retrieval_vs_fixture(records: list[dict], conversations: list[dict])
     ing = [s for s in sampled if s["ingestion_ratio"] is not None]
     ingestion_rate = (statistics.mean(s["ingestion_ratio"] for s in ing)
                       if ing else None)
-    # perfect-hive ceiling: fully-stated measurable turns / measurable turns
+    # perfect-strata ceiling: fully-stated measurable turns / measurable turns
     full_stated = [s for s in measurable if s["ingestion_ratio"] == 1.0]
     ceiling = (len(full_stated) / len(measurable) if measurable else 0.0)
     precs = [s["precision"] for s in sampled if s["precision"] is not None]
@@ -297,8 +297,8 @@ def main() -> None:
           f"(first-mention excluded: {result['first_mention_turns']})")
     print(f"  ingestion_rate        : {result['ingestion_rate']}% "
           f"(expected facts the model actually stated - fidelity bound)")
-    print(f"  perfect-hive ceiling  : {result['perfect_hive_ceiling']}% "
-          f"(max recall any hive could achieve on this run)")
+    print(f"  perfect-strata ceiling  : {result['perfect_hive_ceiling']}% "
+          f"(max recall any strata could achieve on this run)")
     print(f"  retrieval_recall      : {result['retrieval_recall']}% "
           f"(honest, stated-facts only)")
     print(f"  recall (retrievable)  : {result['retrieval_recall_retrievable']}% "

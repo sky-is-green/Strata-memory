@@ -56,7 +56,7 @@ from backend.providers import (
 from cortex.baselines.runner import load_conversations
 from cortex.config import HiveConfig
 from cortex.e2e import FakeUltraSmall, MockTransport
-from cortex.hive import Hive
+from cortex.strata import Hive
 from cortex.routing import DroneRouter
 from experiments.dashboard import KeepAwake, TermDashboard
 from logs.event_logger import EventLogger
@@ -242,11 +242,11 @@ def _acquire_run_lock(run_dir) -> bool:
     return True
 
 
-def _run_conversations(hive, conversations, max_turns, conversation_id=None,
+def _run_conversations(strata, conversations, max_turns, conversation_id=None,
                        show_progress=True, resume=None, checkpoint_path=None,
                        checkpoint_every=10, run_args=None, dashboards=None,
                        ttft_probe_every: int = 0):
-    """Run conversations through the hive, optionally resuming a prior run.
+    """Run conversations through the strata, optionally resuming a prior run.
 
     ``resume`` (dict) carries ``conv_index`` (0-based index of the conversation
     being processed), ``turn_index`` (user turns already done inside it),
@@ -272,12 +272,12 @@ def _run_conversations(hive, conversations, max_turns, conversation_id=None,
             return
         checkpoint_path.write_text(json.dumps({
             "version": 1,
-            "run_id": hive.run_id,
-            "config": hive.config.to_dict(),
-            "store": hive.store.to_dict(),
-            "hive_turn": hive.turn,
-            "comb_stats_history": list(getattr(hive, "comb_stats_history", []) or []),
-            "comb_stats": dict(getattr(hive, "comb_stats", {}) or {}),
+            "run_id": strata.run_id,
+            "config": strata.config.to_dict(),
+            "store": strata.store.to_dict(),
+            "hive_turn": strata.turn,
+            "comb_stats_history": list(getattr(strata, "comb_stats_history", []) or []),
+            "comb_stats": dict(getattr(strata, "comb_stats", {}) or {}),
             "progress": {
                 "conv_index": conv_index,
                 "turn_index": turn_index,
@@ -296,7 +296,7 @@ def _run_conversations(hive, conversations, max_turns, conversation_id=None,
         # this reset, one Hive/store across all conversations lets chunks from
         # earlier conversations crowd out the current one's relevant context.
         if not (resume is not None and ci == start_conv and current_record is not None):
-            hive.reset_conversation()
+            strata.reset_conversation()
         if ci == start_conv and current_record is not None:
             conv_record = current_record
         else:
@@ -316,12 +316,12 @@ def _run_conversations(hive, conversations, max_turns, conversation_id=None,
                 break
             if ci == start_conv and turn_count <= start_turn:
                 continue  # already processed before the checkpoint
-            res = hive.process_turn(td["content"], conversation_id=conversation_id)
+            res = strata.process_turn(td["content"], conversation_id=conversation_id)
             ttft_ms = None
             if ttft_probe_every and turn_count % ttft_probe_every == 0 \
-                    and hive.backend is not None and res.assembled:
+                    and strata.backend is not None and res.assembled:
                 ttft_ms = _ttft_probe_ms(
-                    hive.backend, hive.pinned_prefix, res.assembled.content,
+                    strata.backend, strata.pinned_prefix, res.assembled.content,
                     td["content"],
                 )
             conv_record["turns"].append({
@@ -336,10 +336,10 @@ def _run_conversations(hive, conversations, max_turns, conversation_id=None,
                 "token_count": res.assembled.token_count if res.assembled else 0,
                 "budget": res.assembled.budget if res.assembled else 0,
                 "completion_tokens": (
-                    (getattr(hive.backend, "last_usage", {}) or {}).get("completion_tokens")
+                    (getattr(strata.backend, "last_usage", {}) or {}).get("completion_tokens")
                 ),
                 "prompt_tokens": (
-                    (getattr(hive.backend, "last_usage", {}) or {}).get("prompt_tokens")
+                    (getattr(strata.backend, "last_usage", {}) or {}).get("prompt_tokens")
                 ),
                 "ttft_probe_ms": ttft_ms,
             })
@@ -651,7 +651,7 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument(
         "--comb-dir", default="",
         help="enable the comb (P11 surplus SSD tier) and write per-conversation "
-             "archive files here, e.g. runs/<ts>/comb. Chunks the hive once "
+             "archive files here, e.g. runs/<ts>/comb. Chunks the strata once "
              "curated that leave the active store (LRU eviction or stale-out) "
              "are frozen to disk instead of dropped, and resurrected when a "
              "returned topic's query is weak in the store (comb_gate_threshold).",
@@ -736,7 +736,7 @@ def main(argv: list[str] | None = None) -> int:
     (run_dir / "labels").mkdir(parents=True, exist_ok=True)
     logger = EventLogger(log_dir=log_dir)
 
-    # --- backend + hive ---
+    # --- backend + strata ---
     try:
         backend, ultra, live = _resolve_backend(args)
     except RuntimeError as exc:
@@ -772,7 +772,7 @@ def main(argv: list[str] | None = None) -> int:
         config.comb_top_k = args.comb_top_k
         config.comb_max_records = args.comb_max_records
         Path(config.comb_dir).mkdir(parents=True, exist_ok=True)
-    hive = Hive(
+    strata = Hive(
         config=config,
         ultra=ultra,
         medium=MediumDrone(score_pair_fn=lambda q, c: 0.5),
@@ -781,15 +781,15 @@ def main(argv: list[str] | None = None) -> int:
         pinned_prefix=args.pinned_prefix,
     )
     if resume_ckpt:
-        hive.run_id = resume_ckpt["run_id"]
-        hive.store = ContextStore.from_dict(
-            resume_ckpt["store"], embed_fn=hive.ultra.embed
+        strata.run_id = resume_ckpt["run_id"]
+        strata.store = ContextStore.from_dict(
+            resume_ckpt["store"], embed_fn=strata.ultra.embed
         )
-        hive.turn = resume_ckpt["hive_turn"]
+        strata.turn = resume_ckpt["hive_turn"]
         if resume_ckpt.get("comb_stats_history") is not None:
-            hive.comb_stats_history = list(resume_ckpt["comb_stats_history"])
+            strata.comb_stats_history = list(resume_ckpt["comb_stats_history"])
         if resume_ckpt.get("comb_stats") is not None:
-            hive.comb_stats = dict(resume_ckpt["comb_stats"])
+            strata.comb_stats = dict(resume_ckpt["comb_stats"])
 
     # Pinned prefix must reach the backend as a byte-stable leading system
     # message for llama.cpp automatic prefix caching (see KVCacheManager).
@@ -841,7 +841,7 @@ def main(argv: list[str] | None = None) -> int:
     _phase(f"1/3 E2E conversations ({len(conversations)} convs, ~{_total_user_turns(conversations, args.max_turns)} turns)")
     push("set_phase", f"1/3 E2E ({len(conversations)} convs)")
     records = _run_conversations(
-        hive, conversations, args.max_turns, conversation_id=run_dir.name,
+        strata, conversations, args.max_turns, conversation_id=run_dir.name,
         resume=resume_ckpt.get("progress") if resume_ckpt else None,
         checkpoint_path=run_dir / "checkpoint.json",
         checkpoint_every=args.checkpoint_every,
@@ -931,17 +931,17 @@ def main(argv: list[str] | None = None) -> int:
                     "TTFT trend means the pinned prefix stopped being reused",
         }
     comb_report = None
-    if getattr(hive, "comb_stats_history", None):
+    if getattr(strata, "comb_stats_history", None):
         comb_report = {
             "enabled": bool(args.comb_dir),
             "dir": args.comb_dir,
-            "per_conversation": hive.comb_stats_history,
+            "per_conversation": strata.comb_stats_history,
             "total": {
-                k: sum(c[k] for c in hive.comb_stats_history) for k in ("archived", "resurrected", "comb_hits", "gate_fired")
+                k: sum(c[k] for c in strata.comb_stats_history) for k in ("archived", "resurrected", "comb_hits", "gate_fired")
             },
         }
     report = {
-        "run_id": hive.run_id,
+        "run_id": strata.run_id,
         "mode": "live" if live else "mock",
         "backend": type(backend).__name__,
         "engine": {
@@ -974,7 +974,7 @@ def main(argv: list[str] | None = None) -> int:
 
     # --- summary ---
     agg = report["aggregate"]
-    print(f"Run {hive.run_id} ({report['mode']}) -> {run_dir.resolve()}")
+    print(f"Run {strata.run_id} ({report['mode']}) -> {run_dir.resolve()}")
     print(f"  conversations : {agg.get('conversations', 0)}  turns: {agg.get('user_turns', 0)}")
     print(f"  PES min/avg   : {agg.get('min_pes')} / {agg.get('avg_pes')}")
     if post_run_pes:

@@ -1,4 +1,4 @@
-"""Import sweep: every module in both trees (hive/ + hivebench/) must import.
+"""Import sweep: every module in both trees (strata/ + hivebench/) must import.
 
 Guards the flat-import contract (`cortex`, `sieve`, `tests`, `experiments`, ...)
 and catches modules the rest of the suite never imports (e.g.

@@ -1,6 +1,6 @@
 # HiveMemory / HiveBench
 
-[![CI](https://github.com/sky-is-green/hive-memory/actions/workflows/ci.yml/badge.svg)](https://github.com/sky-is-green/hive-memory/actions/workflows/ci.yml)
+[![CI](https://github.com/sky-is-green/strata-memory/actions/workflows/ci.yml/badge.svg)](https://github.com/sky-is-green/strata-memory/actions/workflows/ci.yml)
 
 **HiveMemory** is an external, multi-agent context-curation layer for
 long-horizon LLM conversations. It sits between a user and a local LLM backend,
@@ -10,7 +10,7 @@ performs well over arbitrarily long conversations on consumer hardware.
 
 **HiveBench** is its evaluation suite: unit/integration/benchmark tests, a live
 benchmark harness, and the white paper's falsifiable predictions
-([P1-P11](HIVE-WHITE-PAPER.md#5-hypotheses-and-predictions)) with measured
+([P1-P11](STRATA-WHITE-PAPER.md#5-hypotheses-and-predictions)) with measured
 verdicts.
 
 ## Quickstart
@@ -19,8 +19,8 @@ Requires Python 3.10+ and, for live runs, any OpenAI-compatible backend (LM Stud
 `llama-server` for you from GGUF files dropped into `models/gguf/`.
 
 ```powershell
-git clone https://github.com/sky-is-green/hive-memory.git
-cd hive-memory
+git clone https://github.com/sky-is-green/strata-memory.git
+cd strata-memory
 python -m venv .venv
 .\.venv\Scripts\python -m pip install -e ".[harness,bench]"
 .\.venv\Scripts\python -m harness --setup   # creates config, probes backend, warms the drone
@@ -32,14 +32,14 @@ Narrower layers install cleanly too:
 
 | Install target | What you get |
 |---|---|
-| `pip install hive-memory` | The system: drones, cortex, retention, backends |
-| `pip install "hive-memory[harness]"` | + HiveBench Studio (FastAPI sidecar) |
-| `pip install "hive-memory[bench]"` | + the evaluation suite (pytest, ST trainer) |
+| `pip install strata-memory` | The system: drones, cortex, retention, backends |
+| `pip install "strata-memory[harness]"` | + HiveBench Studio (FastAPI sidecar) |
+| `pip install "strata-memory[bench]"` | + the evaluation suite (pytest, ST trainer) |
 
 The full fresh-machine walkthrough (fixtures, live benchmark, troubleshooting)
 is `docs/INSTALL.md`; every claim below is reproduced by commands in this repo.
 
-## Why Hive
+## Why Strata
 
 The core idea is the white paper's *Separation Postulate*: small bidirectional
 "drone" encoders (fast, cheap, CPU-friendly) do the *comprehension*, scoring,
@@ -47,31 +47,31 @@ filtering, and routing context, while the primary generative LLM does the
 *generation*.
 
 **The headline measurement**: same 308+ turn conversations, same model,
-hive vs naive FIFO windowing (live run `20260822_211131`):
+strata vs naive FIFO windowing (live run `20260822_211131`):
 
-- **[Hive ≥ FIFO on 85.1% of retrievable turns](HIVE-WHITE-PAPER.md#p3-context-sufficiency-hypothesis) (P3)**;
+- **[Strata ≥ FIFO on 85.1% of retrievable turns](STRATA-WHITE-PAPER.md#p3-context-sufficiency-hypothesis) (P3)**;
   the direct head-to-head against the current standard
-- **[90.3% of the facts the model stated made it into context](HIVE-WHITE-PAPER.md#p2-retrieval-precision-hypothesis)** (P2), deterministic
+- **[90.3% of the facts the model stated made it into context](STRATA-WHITE-PAPER.md#p2-retrieval-precision-hypothesis)** (P2), deterministic
   diagnostic, ≥90% target; FIFO truncates and drops facts at its window
   limit
-- **[Flat generation speed across 308+ turns](HIVE-WHITE-PAPER.md#p1-constant-throughput-hypothesis)** (P1), 14.5 → 15.5 decode tps
+- **[Flat generation speed across 308+ turns](STRATA-WHITE-PAPER.md#p1-constant-throughput-hypothesis)** (P1), 14.5 → 15.5 decode tps
   (+6.7%), no context-bloat slowdown
 - All at ~3.4 ms assembly + ~15 ms drone scoring overhead per turn
 
-![Post-run PES: hive 80.0 GREEN vs rolling 12.2 / FIFO 11.6](figures/pes.png)
+![Post-run PES: strata 80.0 GREEN vs rolling 12.2 / FIFO 11.6](figures/pes.png)
 
 *PES is the system's own pipeline-efficiency score (retrieval/routing/
 latency/throughput/utilization), a health signal, not a measure of answer
 quality. The head-to-head evidence above is what the claims rest on.*
 
-**Why Hive is a great addition to LLM use**
+**Why Strata is a great addition to LLM use**
 
-- **Bounded cost, always.** The hive caps the context window regardless of
+- **Bounded cost, always.** The strata caps the context window regardless of
   conversation length (adaptive budget: 1-3k tokens live), so per-turn cost and
   generation time stay flat instead of growing with history. And because KV
   compression is a *precision* axis while curation is a *selection* axis, the
   savings compound rather than compete: paired with a TurboQuant-class KV
-  quantizer (~3-4 bits, near-zero loss), a hive-curated context makes a
+  quantizer (~3-4 bits, near-zero loss), a strata-curated context makes a
   50k-token conversation's cache ~150× smaller than raw history, selection
   multiplies precision on the surviving tokens (white paper §1.6).
 - **It drops in around your existing backend.** Any OpenAI-compatible endpoint
@@ -83,12 +83,12 @@ quality. The head-to-head evidence above is what the claims rest on.*
   quantization fills).
 - **The efficiency gap is measured, not claimed:**
 
-| Metric | Hive | Status quo (FIFO/rolling window) |
+| Metric | Strata | Status quo (FIFO/rolling window) |
 |---|---|---|
 | Pipeline efficiency (PES, flagship live run) | **80.0 GREEN** | 12.2 / 11.6 |
-| [Decode speed over 308+ turns](HIVE-WHITE-PAPER.md#p1-constant-throughput-hypothesis) (P1) | **Flat** (14.5→15.5 tps, +6.7%) | Slows as context grows, then truncates |
-| [Stated-fact recall](HIVE-WHITE-PAPER.md#p2-retrieval-precision-hypothesis) (P2, deterministic) | **90.3%** | Facts dropped at window limit |
-| [Turns where hive ≥ FIFO](HIVE-WHITE-PAPER.md#p3-context-sufficiency-hypothesis) (P3) | **85.1%** | - |
+| [Decode speed over 308+ turns](STRATA-WHITE-PAPER.md#p1-constant-throughput-hypothesis) (P1) | **Flat** (14.5→15.5 tps, +6.7%) | Slows as context grows, then truncates |
+| [Stated-fact recall](STRATA-WHITE-PAPER.md#p2-retrieval-precision-hypothesis) (P2, deterministic) | **90.3%** | Facts dropped at window limit |
+| [Turns where strata ≥ FIFO](STRATA-WHITE-PAPER.md#p3-context-sufficiency-hypothesis) (P3) | **85.1%** | - |
 | Paired A/B under window pressure (82 turns, live) | **84.1% overall; 87.5% vs 82.1% late-turn, once the window drops facts** | 84.1% while its window still holds everything |
 | Context utilization (p50) | **74.5%** | ~40% (fluff) |
 | Added latency per turn | **~18 ms** | 0 (but loses the facts) |
@@ -98,13 +98,13 @@ All numbers are the live runs recorded in the white paper's measured-outcome
 table (§8); PES is defined in §6. The paired A/B row is the fair-selection
 live measurement (bonsai-27b, identical replayed history for both arms,
 FIFO window capped at 1500 tokens to force truncation): at parity overall,
-with strict hive-only wins outnumbering FIFO-only 14:6 once the naive
+with strict strata-only wins outnumbering FIFO-only 14:6 once the naive
 window starts dropping facts.
 
-![Context tokens delivered per turn: hive stays flat while unbounded history grows to 33k+ tokens](figures/token_growth.svg)
+![Context tokens delivered per turn: strata stays flat while unbounded history grows to 33k+ tokens](figures/token_growth.svg)
 
 *Median context tokens per user turn across 721 live turns (two run bundles):
-the hive delivers a flat ~1.2-1.4k-token window regardless of session length,
+the strata delivers a flat ~1.2-1.4k-token window regardless of session length,
 while the unbounded history it replaces reaches 33,500+ tokens by turn 40.*
 
 ## Why HiveBench
@@ -114,12 +114,12 @@ tells you *whether the context you feed the model is the reason it works*, and
 it does it deterministically, offline, and replayably:
 
 - **Falsifiable, not vibes.** The white paper's
-  [P1-P11 predictions](HIVE-WHITE-PAPER.md#5-hypotheses-and-predictions) ship as
+  [P1-P11 predictions](STRATA-WHITE-PAPER.md#5-hypotheses-and-predictions) ship as
   executable tests with measured PASS/FAIL verdicts (§8). Every number in this
   README is reproduced by a command in the repo.
 - **No LLM-as-judge circularity in the evidence path.** The deterministic
   diagnostics score fact presence against fixture ground truth, stated-facts
-  recall, first-mention exclusion, hedge filtering. **The Hive queen**, an
+  recall, first-mention exclusion, hedge filtering. **The Strata queen**, an
   asynchronous ground-truth layer that labels, after each turn, whether the
   assembled context was actually sufficient for the query, corroborates that
   evidence; because it shares the served model's biases, it never constitutes
@@ -130,7 +130,7 @@ it does it deterministically, offline, and replayably:
   does require a local model backend, LM Studio / llama.cpp, which on most
   rigs means a GPU; the drones themselves stay on CPU.)
 - **Paired head-to-head A/B** (`hivebench-ab`): the same turns, the same model,
-  hive-curated context vs the naive FIFO window, both answers scored
+  strata-curated context vs the naive FIFO window, both answers scored
   deterministically (fixture-fact presence + context fidelity), with both
   arms' stores replaying identical history so the comparison isolates
   selection. The scoring path is unit-tested; interim live results are
@@ -181,11 +181,11 @@ Because window size is not usable-context size: models under-use mid-window
 content (lost-in-the-middle), every turn pays for the whole history, and at
 the limit a rolling window blindly evicts exactly the early facts long
 conversations need (white paper §1.1). A bigger window moves the cliff; the
-hive removes the growth, feeding a flat 1-3k curated window at constant decode
+strata removes the growth, feeding a flat 1-3k curated window at constant decode
 speed (P1) while stated-fact recall measures 90.3% (P2).
 
 **Is this just RAG?**
-RAG retrieves from an external corpus per query. The hive retrieves from *the
+RAG retrieves from an external corpus per query. The strata retrieves from *the
 conversation itself*, continuously, through decay/dedup/drift retention
 policies, and composes with RAG rather than competing with it (white paper §2).
 
@@ -193,24 +193,24 @@ policies, and composes with RAG rather than competing with it (white paper §2).
 
 | Path | Contents |
 |---|---|
-| `hive/` | The system: cortex (routing, PES, congestion), sieve (drones), retention, focal (budget/assembly), backend (LM Studio / OpenAI-compat), queen (async ground truth) |
+| `strata/` | The system: cortex (routing, PES, congestion), sieve (drones), retention, focal (budget/assembly), backend (LM Studio / OpenAI-compat), queen (async ground truth) |
 | `hivebench/` | The evaluation suite: `tests/` (grouped runner), `testing/` (A/B, ablation, shadow mode), `experiments/` (live benchmark, protocol, probes) |
-| `harness/` | HiveBench Studio sidecar (FastAPI service over the hive) |
+| `harness/` | HiveBench Studio sidecar (FastAPI service over the strata) |
 | `docs/` | Full-stack install guide + integration guides (OpenCode, dsh, your own harness) |
 
 ## Use the system in your own project
 
-`hive/` is self-contained; it never imports from the bench or the harness:
+`strata/` is self-contained; it never imports from the bench or the harness:
 
 ```python
-from hive import Hive, HiveConfig, UltraSmallDrone, LMStudioBackend
+from strata import Strata, HiveConfig, UltraSmallDrone, LMStudioBackend
 
-hive = Hive(
+strata = Strata(
     config=HiveConfig(),
     ultra=UltraSmallDrone(),
     backend=LMStudioBackend(base_url="http://localhost:1234"),
 )
-result = hive.process_turn("what did we decide about auth?")
+result = strata.process_turn("what did we decide about auth?")
 print(result.reply)
 ```
 
@@ -220,7 +220,7 @@ The two commands from [Quickstart](#quickstart) are the whole story: `--setup`
 copies `providers.example.json` → `providers.local.json` if missing, probes for
 a reachable backend (LM Studio on `:1234`, or auto-starts the local
 `llama-server` from `models/gguf`), and prints the next step. The studio serves
-the hive over a FastAPI API, the endpoint contract lives in
+the strata over a FastAPI API, the endpoint contract lives in
 `harness/harness/app.py`, and `docs/INTEGRATE.md` shows how to point external
 clients at it.
 
@@ -245,11 +245,11 @@ The live benchmark talks to an OpenAI-compatible backend (e.g. LM Studio on
 ```
 
 See `docs/INSTALL.md` for the full setup and run guide, and
-`HIVE-WHITE-PAPER.md` §8 for the measured-outcome table behind every claim.
+`STRATA-WHITE-PAPER.md` §8 for the measured-outcome table behind every claim.
 
 ## Documentation
 
 - **`docs/INSTALL.md`**, full-stack install guide (system + benchmark + studio, fresh machine)
-- **`docs/INTEGRATE.md`**, using hive-memory inside OpenCode, dsh, or your own harness
-- **`HIVE-WHITE-PAPER.md`**, the theory: postulates, falsifiable predictions P1-P11 with measured verdicts (§8), the PES metric (§6), KV-compression landscape (§1.6), threats & limitations (§9)
-- **`HIVE-DIAGRAMS.md`**, visuals and measured charts
+- **`docs/INTEGRATE.md`**, using strata-memory inside OpenCode, dsh, or your own harness
+- **`STRATA-WHITE-PAPER.md`**, the theory: postulates, falsifiable predictions P1-P11 with measured verdicts (§8), the PES metric (§6), KV-compression landscape (§1.6), threats & limitations (§9)
+- **`STRATA-DIAGRAMS.md`**, visuals and measured charts

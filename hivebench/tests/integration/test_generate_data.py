@@ -142,7 +142,7 @@ def test_per_conversation_store_isolation(tmp_path):
 
     from cortex.config import HiveConfig
     from cortex.e2e import FakeUltraSmall, MockTransport
-    from cortex.hive import Hive
+    from cortex.strata import Hive
     from backend.lmstudio import LMStudioBackend
     from cortex.baselines.runner import load_conversations
 
@@ -152,7 +152,7 @@ def test_per_conversation_store_isolation(tmp_path):
     second = next(c for c in convs if c["conversation_id"] == "edge_002")
 
     config = HiveConfig(confidence_mode="off", sanitize_context=False)
-    hive = Hive(
+    strata = Hive(
         config=config,
         ultra=FakeUltraSmall(),
         medium=__import__("sieve.medium", fromlist=["MediumDrone"]).MediumDrone(
@@ -165,17 +165,17 @@ def test_per_conversation_store_isolation(tmp_path):
     for td in first["turns"]:
         if td.get("role") != "user":
             continue
-        hive.process_turn(td["content"])
-    first_chunks = [c.content for c in hive.store.all_chunks()]
+        strata.process_turn(td["content"])
+    first_chunks = [c.content for c in strata.store.all_chunks()]
     assert first_chunks and "order schema" in " ".join(first_chunks).lower()
 
     # Conversation 2 starts from a fresh store: no order-schema content.
-    hive.reset_conversation()
+    strata.reset_conversation()
     for td in second["turns"]:
         if td.get("role") != "user":
             continue
-        hive.process_turn(td["content"])
-    second_chunks = [c.content for c in hive.store.all_chunks()]
+        strata.process_turn(td["content"])
+    second_chunks = [c.content for c in strata.store.all_chunks()]
     assert second_chunks
     joined = " ".join(second_chunks).lower()
     assert "order schema" not in joined

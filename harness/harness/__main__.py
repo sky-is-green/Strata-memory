@@ -137,7 +137,7 @@ def _protect_git_excludes(root: Path, names: list[str]) -> None:
         missing = [n for n in names if n not in existing]
         if missing:
             with excl.open("a", encoding="utf-8") as fh:
-                fh.write("\n# hive-memory studio runtime state (auto-added)\n")
+                fh.write("\n# strata-memory studio runtime state (auto-added)\n")
                 fh.write("\n".join(missing) + "\n")
     except OSError:
         pass
@@ -154,7 +154,7 @@ def main(argv: list[str] | None = None) -> int:
                         help="path to the providers JSON config "
                              "(default providers.local.json)")
     parser.add_argument("--log-dir", default="logs",
-                        help="NDJSON event-log directory for hive turns")
+                        help="NDJSON event-log directory for strata turns")
     parser.add_argument(
         "--state-dir", default="harness_state",
         help="directory where conversations persist across restarts "

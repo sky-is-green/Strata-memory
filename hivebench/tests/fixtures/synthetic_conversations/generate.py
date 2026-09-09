@@ -23,7 +23,7 @@ OUTPUT_DIR = Path(__file__).resolve().parents[1] / "generated"
 
 # ---------------------------------------------------------------------------
 # Domain content: per-topic feature + decisions (facts) that turn templates use.
-# The topic table lives in the system (queen.topics) so hive/ never imports
+# The topic table lives in the system (queen.topics) so strata/ never imports
 # from the bench; it is re-exported here for backward compatibility.
 # ---------------------------------------------------------------------------
 from queen.topics import TOPICS  # noqa: E402

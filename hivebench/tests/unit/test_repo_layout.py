@@ -1,6 +1,6 @@
 """Guards for the repo layout.
 
-The repo is split into `hive/` (the system), `hivebench/` (the evaluation
+The repo is split into `strata/` (the system), `hivebench/` (the evaluation
 suite) and `harness/` (the HiveBench Studio sidecar) with flat top-level
 import names. These tests pin the invariants the restructure depends on: no
 stray package dirs at the root, pyproject declaring all three trees, the vocab
@@ -15,11 +15,11 @@ from setuptools import find_packages
 from sieve.vocabulary import Vocabulary
 
 ROOT = Path(__file__).resolve().parents[3]
-HIVE = ROOT / "hive"
+HIVE = ROOT / "strata"
 HIVEBENCH = ROOT / "hivebench"
 HARNESS = ROOT / "harness"
 
-PACKAGE_ROOTS = ("hive", "hivebench", "harness")
+PACKAGE_ROOTS = ("strata", "hivebench", "harness")
 
 EXPECTED_PACKAGES = {
     "backend",
@@ -52,7 +52,7 @@ def test_no_stray_package_dirs_at_root():
 def test_pyproject_declares_all_trees():
     cfg = tomllib.loads((ROOT / "pyproject.toml").read_text(encoding="utf-8"))
     where = cfg["tool"]["setuptools"]["packages"]["find"]["where"]
-    assert where == ["hive", "hivebench", "harness"]
+    assert where == ["strata", "hivebench", "harness"]
 
 
 def test_find_packages_resolves_flat_names():
@@ -60,7 +60,7 @@ def test_find_packages_resolves_flat_names():
     for root in PACKAGE_ROOTS:
         found |= set(find_packages(where=root))
     assert EXPECTED_PACKAGES <= found
-    assert "cortex" in found and "hive.cortex" not in found
+    assert "cortex" in found and "strata.cortex" not in found
     assert "harness" in found
 
 

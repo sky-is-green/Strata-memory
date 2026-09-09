@@ -30,7 +30,7 @@ from backend.cache_manager import KVCacheManager
 from backend.lmstudio import LMStudioBackend
 from backend.sampling import parse_sampling
 from cortex.efficiency import EfficiencyScorer
-from cortex.hive import Hive
+from cortex.strata import Hive
 from cortex.routing import DroneRouter, EscalationHandler
 from focal.assembly import ContextAssembler
 from focal.budget import AdaptiveBudget
@@ -202,7 +202,7 @@ class PredictionSuite:
         )
 
     def p3(self):
-        """Context sufficiency: hive-selected context >= FIFO window on >=80% of
+        """Context sufficiency: strata-selected context >= FIFO window on >=80% of
         turns, measured deterministically (no LLM queen).
 
         Sufficiency is the *fact-presence* test the deterministic P2 diagnostic
@@ -211,7 +211,7 @@ class PredictionSuite:
         terms the answer adds beyond the query). Every user turn with a known
         answer is compared — not one conversation, not every 3rd turn.
 
-        The hive store grows like the live hive (query chunk + non-hedge reply
+        The strata store grows like the live strata (query chunk + non-hedge reply
         chunk per turn, mirroring ``Hive.process_turn``), so the selection sees
         the same history a live run would. The FIFO context is the last-4k-token
         window of the same history.
@@ -221,7 +221,7 @@ class PredictionSuite:
         first-mention exclusion the deterministic P2 diagnostic applies). A
         first-mention turn has no fact in history for *either* system, so neither
         can be sufficient; counting it would dilute the ratio with structurally
-        unanswerable turns. Among retrievable turns, a hive *win* requires hive
+        unanswerable turns. Among retrievable turns, a strata *win* requires strata
         sufficient AND FIFO not (strict — a tie where both deliver the fact is
         not evidence of a selection advantage).
         """
@@ -281,7 +281,7 @@ class PredictionSuite:
                     both += 1
                 else:
                     neither += 1
-                # grow the hive store like the live pipeline: query chunk always,
+                # grow the strata store like the live pipeline: query chunk always,
                 # reply chunk unless it is a hedge
                 reply = (conv_answers.get(q) or "").strip() or ""
                 store.add_chunk(turn, q)
@@ -289,20 +289,20 @@ class PredictionSuite:
                     store.add_chunk(turn, reply)
 
         if compared == 0:
-            return PredictionResult("P3", "Context sufficiency (hive>=FIFO)", "SKIP", {},
+            return PredictionResult("P3", "Context sufficiency (strata>=FIFO)", "SKIP", {},
                                     "no retrievable turns with fixture ground-truth answers")
-        # Paper protocol: paired A/B, report % of turns where hive >= FIFO. The
+        # Paper protocol: paired A/B, report % of turns where strata >= FIFO. The
         # denominator is turns where the answer's facts were actually in history
         # (at least one system was sufficient) — a first-mention turn has no fact
         # in history for either system, and a turn where neither system's context
         # contained the canonical fact terms had no fact to retrieve at all.
         fact_retrievable = hive_only + fifo_only + both
-        wins = hive_only + both  # hive >= FIFO (ties count, per the paper's A/B)
+        wins = hive_only + both  # strata >= FIFO (ties count, per the paper's A/B)
         ratio = wins / fact_retrievable if fact_retrievable else 0.0
         strict = hive_only / fact_retrievable if fact_retrievable else 0.0
         ok = ratio >= 0.80
         return PredictionResult(
-            "P3", "Context sufficiency (hive>=FIFO)", "PASS" if ok else "FAIL",
+            "P3", "Context sufficiency (strata>=FIFO)", "PASS" if ok else "FAIL",
             {
                 "metric": "deterministic_fact_presence",
                 "compared": compared,
@@ -317,7 +317,7 @@ class PredictionSuite:
                 "target": 0.80,
             },
             "sufficiency = fixture answer-fact terms present in context; "
-            "paper protocol: hive >= FIFO on turns where the facts were actually "
+            "paper protocol: strata >= FIFO on turns where the facts were actually "
             "in history (ties count); first-mention turns excluded (no fact in "
             "history for either system).",
         )
@@ -606,7 +606,7 @@ class PredictionSuite:
 
         - **full replay** (max_chunks=1000, adaptive budget): the honest
           live-like comparison. On short conversations the whole store fits the
-          budget, so a no-comb hive can still surface old facts from the store
+          budget, so a no-comb strata can still surface old facts from the store
           (only stale-decayed) — the regime boundary where the comb neither
           helps nor hurts (mirrors the P3 short-conversation finding).
         - **budget-pressure replay** (max_chunks=8, fixed 1000-token budget):

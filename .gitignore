@@ -39,7 +39,7 @@ models/
 *.npy
 *.npz
 cache/
-hive/sieve/cache/
+strata/sieve/cache/
 *.h5
 
 # Trained / serialized artifacts
@@ -48,10 +48,10 @@ hive/sieve/cache/
 *.ckpt
 *.safetensors.bak
 
-# Runtime state (context store, decay matrix, hive checkpoints)
+# Runtime state (context store, decay matrix, strata checkpoints)
 state/
 checkpoints/
-hive/retention/state/
+strata/retention/state/
 *.jsonl
 
 # Databases (ground truth, vault)
@@ -115,7 +115,7 @@ config.local.*
 
 # AI coordination / handoff documents (local working documents, not repo content)
 HARNESS-SPEC.md
-HIVE-HANDOFF.md
+STRATA-HANDOFF.md
 HANDOFF-*.md
 
 # OS / editor
@@ -129,3 +129,4 @@ Thumbs.db
 # Local agent-tool config (machine-specific)
 .opencode/
 opencode.json
+*.whl

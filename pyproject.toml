@@ -3,9 +3,9 @@ requires = ["setuptools>=61"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "hive-memory"
+name = "strata-memory"
 version = "0.1.0"
-description = "Hive Memory — an external, multi-agent context-curation layer for long-horizon LLM conversations, plus the HiveBench evaluation suite"
+description = "Strata Memory — an external, multi-agent context-curation layer for long-horizon LLM conversations, plus the HiveBench evaluation suite"
 readme = "README.md"
 requires-python = ">=3.10"
 dependencies = [
@@ -56,4 +56,4 @@ hivebench-harness = "harness.__main__:main"
 #   hivebench/ -> tests, testing, experiments
 #   harness/   -> the HiveBench Studio sidecar (python -m harness)
 [tool.setuptools.packages.find]
-where = ["hive", "hivebench", "harness"]
+where = ["strata", "hivebench", "harness"]

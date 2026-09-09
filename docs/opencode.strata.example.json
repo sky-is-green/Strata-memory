@@ -1,0 +1,19 @@
+{
+  "$schema": "https://opencode.ai/config.json",
+  "provider": {
+    "strata-memory": {
+      "npm": "@ai-sdk/openai-compatible",
+      "name": "Strata Memory (curated context)",
+      "options": {
+        "baseURL": "http://127.0.0.1:8765/v1/openai"
+      },
+      "models": {
+        "prism-ml/bonsai-27b": {
+          "name": "bonsai-27b via Strata",
+          "tool_call": true
+        }
+      }
+    }
+  },
+  "model": "strata-memory/prism-ml/bonsai-27b"
+}

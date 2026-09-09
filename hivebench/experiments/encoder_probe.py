@@ -97,13 +97,13 @@ def _load_live_pairs(run_dir: Path, max_pairs: int) -> list[dict]:
 
     Rebuilds the measurement that produced the hand-off's precision ceiling:
     for each user query in the run, the candidate chunks are the *prior stored
-    reply chunks* (non-hedge replies, mirroring what the hive stores), and a
+    reply chunks* (non-hedge replies, mirroring what the strata stores), and a
     chunk is relevant iff it contains a fact term of the fixture's
     ground-truth answer for that query (the deterministic P2 diagnostic's own
     notion of relevance — see ``retrieval_diagnostic._answer_fact_terms``).
 
     Pairs are causal: only chunks stored *before* the query are candidates,
-    exactly what the hive could have retrieved.
+    exactly what the strata could have retrieved.
     """
     from experiments.retrieval_diagnostic import _answer_fact_terms as _aft
 
@@ -113,7 +113,7 @@ def _load_live_pairs(run_dir: Path, max_pairs: int) -> list[dict]:
     fixture_convs = _load_fixture_conversations()
     answers = _fixture_answer_map(fixture_convs)
 
-    from cortex.hive import Hive
+    from cortex.strata import Hive
 
     pairs: list[dict] = []
     for conv in convs:

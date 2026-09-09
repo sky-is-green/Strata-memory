@@ -2,13 +2,13 @@
 
 State model
 -----------
-- One ``Hive`` instance per conversation_id (fresh store + comb per
-  conversation â€” per-conversation isolation is mandatory, HIVE-HANDOFF Â§6.0 #14).
-  Instances are created lazily on the first turn and dropped by /v1/hive/reset.
+- One ``Strata`` instance per conversation_id (fresh store + comb per
+  conversation â€” per-conversation isolation is mandatory, STRATA-HANDOFF Â§6.0 #14).
+  Instances are created lazily on the first turn and dropped by /v1/strata/reset.
 - Conversations persist to ``state_dir`` (default ./harness_state, one atomic
   JSON per conversation using the same store serialization as the benchmark's
   checkpoint/resume) and reload lazily on first touch after a restart, so the
-  hive survives sidecar restarts. /v1/hive/reset deletes memory AND disk.
+  strata survives sidecar restarts. /v1/strata/reset deletes memory AND disk.
 - One shared ultra-small drone across conversations (a per-conversation encoder
   would multiply VRAM/RAM for nothing); inference is read-only.
 - Per-conversation locks serialize turns within a conversation; different
@@ -74,7 +74,7 @@ from backend.providers import (
     save_registry,
 )
 from cortex.config import HiveConfig
-from cortex.hive import Hive
+from cortex.strata import Strata
 from experiments.model_probe import _list_models, probe_model
 from harness.models import LlamaServerManager
 from harness.reports import (
@@ -106,8 +106,8 @@ def _list_runs(runs_root: Path) -> list[dict]:
     return entries
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
-# Hive mode (AFK) canonical state - workspace-level so all projects share one source.
-MODE_FILE = Path(os.environ.get("HIVE_MODE_FILE", str(Path(REPO_ROOT).parent / "HIVE-MODE.json")))
+# Strata mode (AFK) canonical state - workspace-level so all projects share one source.
+MODE_FILE = Path(os.environ.get("HIVE_MODE_FILE", str(Path(REPO_ROOT).parent / "STRATA-MODE.json")))
 RESEARCH_QUEUE = Path(os.environ.get(
     "HIVE_RESEARCH_QUEUE", str(Path(REPO_ROOT).parent / "RESEARCH-QUEUE.md")))
 DEFAULT_RUNS_ROOT = REPO_ROOT / "runs"
@@ -883,7 +883,7 @@ class _State:
         self.registry = ProviderRegistry()
         self.engines = EngineRegistry()
         self._ultra = None
-        self.hives: dict[str, Hive] = {}
+        self.hives: dict[str, Strata] = {}
         self.locks: dict[str, threading.Lock] = {}
         self.global_lock = threading.Lock()
         # Conversation lifecycle: LRU-bounded so a long-running sidecar cannot
@@ -907,17 +907,17 @@ class _State:
         digest = hashlib.md5(conversation_id.encode("utf-8")).hexdigest()[:16]
         return self.state_dir / f"conv-{digest}.json"
 
-    def save_conversation(self, conversation_id: str, hive: Hive) -> None:
+    def save_conversation(self, conversation_id: str, strata: Strata) -> None:
         """Persist one conversation atomically (tmp file + os.replace)."""
         path = self._conv_path(conversation_id)
         if path is None:
             return
         payload = {
             "conversation_id": conversation_id,
-            "turn": hive.turn,
-            "with_backend": hive.backend is not None,
-            "config": hive.config.to_dict(),
-            "store": hive.store.to_dict(),
+            "turn": strata.turn,
+            "with_backend": strata.backend is not None,
+            "config": strata.config.to_dict(),
+            "store": strata.store.to_dict(),
         }
         tmp = path.with_suffix(".json.tmp")
         tmp.write_text(json.dumps(payload), encoding="utf-8")
@@ -931,32 +931,32 @@ class _State:
     def hive_for(
         self, conversation_id: str, config_overrides: dict | None,
         with_backend: bool = True, engine: Optional[str] = None,
-    ) -> Hive:
-        """Get or lazily create the conversation's hive.
+    ) -> Strata:
+        """Get or lazily create the conversation's strata.
 
         A conversation not in memory but present in ``state_dir`` restores
         from disk (same serialization as the benchmark's checkpoint/resume),
-        so the hive survives sidecar restarts. In-memory hives are LRU-bounded
+        so the strata survives sidecar restarts. In-memory hives are LRU-bounded
         (``HARNESS_MAX_CONVERSATIONS``); evicted conversations are persisted
         first and transparently restore on their next touch.
 
         ``with_backend=False`` (the curate/observe flow, where the caller's
-        own shell generates) creates the hive without an LLM backend; a
-        conversation is driven either fully (/v1/hive/turn) or externally
+        own shell generates) creates the strata without an LLM backend; a
+        conversation is driven either fully (/v1/strata/turn) or externally
         (curate + observe), whichever touches it first wins.
         """
         with self.global_lock:
-            hive = self.hives.get(conversation_id)
-            if hive is not None:
+            strata = self.hives.get(conversation_id)
+            if strata is not None:
                 self._last_access[conversation_id] = time.monotonic()
-                return hive
+                return strata
 
-            def build(cfg: HiveConfig, backend: object | None) -> Hive:
+            def build(cfg: HiveConfig, backend: object | None) -> Strata:
                 logger = self._loggers.get(conversation_id)
                 if logger is None:
                     logger = EventLogger(log_dir=self.log_dir)
                     self._loggers[conversation_id] = logger
-                h = Hive(
+                h = Strata(
                     config=cfg,
                     ultra=self.ultra(),
                     backend=backend,
@@ -970,16 +970,16 @@ class _State:
             if path is not None and path.exists():
                 try:
                     data = json.loads(path.read_text(encoding="utf-8"))
-                    hive = build(HiveConfig.from_dict(data["config"]),
+                    strata = build(HiveConfig.from_dict(data["config"]),
                                  self.backend_factory(None)
                                  if data.get("with_backend") else None)
-                    hive.store = ContextStore.from_dict(
-                        data["store"], embed_fn=hive.ultra.embed
+                    strata.store = ContextStore.from_dict(
+                        data["store"], embed_fn=strata.ultra.embed
                     )
-                    hive.turn = int(data["turn"])
+                    strata.turn = int(data["turn"])
                     self._last_access[conversation_id] = time.monotonic()
                     self._evict_locked(exclude=conversation_id)
-                    return hive
+                    return strata
                 except (ValueError, KeyError, TypeError, OSError) as exc:
                     print(f"harness: restoring {conversation_id} failed ({exc}); "
                           "starting fresh", file=sys.stderr)
@@ -997,10 +997,10 @@ class _State:
                     profile = None
                 if profile is not None and profile.sampling:
                     config.sampling = profile.sampling
-            hive = build(config, self.backend_factory(None) if with_backend else None)
+            strata = build(config, self.backend_factory(None) if with_backend else None)
             self._last_access[conversation_id] = time.monotonic()
             self._evict_locked(exclude=conversation_id)
-            return hive
+            return strata
 
     def _evict_locked(self, exclude: str) -> int:
         """LRU-evict idle conversations beyond the cap. Caller holds the
@@ -1057,7 +1057,7 @@ class _State:
 class TurnRequest(BaseModel):
     query: str
     conversation_id: str = "default"
-    model: Optional[str] = None  # override the provider's model for this turn's hive
+    model: Optional[str] = None  # override the provider's model for this turn's strata
     provider: Optional[str] = None  # per-conversation inference target (multi-model)
     engine: Optional[str] = None  # engine profile name (sampling defaults apply)
     config: Optional[dict] = None  # HiveConfig overrides (applied on creation)
@@ -1266,7 +1266,16 @@ def create_app(
 
             return ServedEmbeddingDrone(base_url=embedding_url,
                                         model=embedding_model)
-        return UltraSmallDrone(confidence_mode="off")
+        # CPU by design: the encoder must never contend with llama-server
+        # for VRAM. MiniLM-L3 is 12M params; CPU embedding costs ~5ms/turn.
+        # Single-threaded on purpose: llama.cpp already holds a large
+        # thread pool, and letting PyTorch OpenMP spawn 16 more exhausts
+        # the sandbox pids cap (EAGAIN -> silent worker death). One
+        # thread is still ~5ms for a 384-dim embedding.
+        import torch
+
+        torch.set_num_threads(1)
+        return UltraSmallDrone(confidence_mode="off", device="cpu")
 
     def _default_backend(model: Optional[str], provider: Optional[str] = None):
         kw = backend_kwargs(st.registry.resolve(provider))
@@ -1274,7 +1283,7 @@ def create_app(
             kw["model"] = model
         return OpenAICompatBackend(**kw)
 
-    app = FastAPI(title="Hive Studio", version="0.1.0")
+    app = FastAPI(title="Strata Studio", version="0.1.0")
     app.add_middleware(
         CORSMiddleware,
         allow_origins=_cors_origins(),
@@ -1286,7 +1295,7 @@ def create_app(
     async def token_guard(request: Request, call_next):
         required = _required_token()
         if required and request.url.path.startswith("/v1/"):
-            supplied = request.headers.get("x-hive-token", "")
+            supplied = request.headers.get("x-strata-token", "")
             if supplied != required:
                 from fastapi.responses import JSONResponse
 
@@ -1312,6 +1321,16 @@ def create_app(
     except (ValueError, OSError) as exc:
         print(f"harness: ignoring unreadable engines config ({exc})", file=sys.stderr)
     app.state.harness = st
+    # Eagerly load the encoder at startup, not lazily on first request.
+    # By first-request time uvicorn's event loop + connection threads are
+    # alive and tip the process over its thread budget, so MiniLM's OpenMP
+    # pool fails to spawn (EAGAIN) and the worker dies silently. Loading
+    # here - before uvicorn serves - keeps the load in a clean state.
+    try:
+        st.ultra()
+    except Exception as exc:  # noqa: BLE001 - never block startup on encoder
+        print(f"harness: encoder pre-load failed ({exc}); will retry lazily",
+              file=sys.stderr)
 
     @app.get("/health")
     def health():
@@ -1319,7 +1338,7 @@ def create_app(
 
     @app.get("/v1/setup/status")
     def setup_status(context: int = 32768, dual: bool = False, vhdx: str | None = None, model_gb: float | None = None):
-        """Setup wizard status — engine + drive + health + tier (hive console)."""
+        """Setup wizard status — engine + drive + health + tier (strata console)."""
         health_info = _setup_health(vhdx)
         tier = _setup_tier(context, dual, vhdx, model_gb)
         complete = bool(health_info["vhdxExists"] and health_info["mounted"] and health_info["shardsFound"] and health_info["dockerRunning"] and not tier["flags"]["diskFull"])
@@ -1619,28 +1638,28 @@ def create_app(
         return result
 
     # ------------------------------------------------------------------
-    @app.post("/v1/hive/turn")
+    @app.post("/v1/strata/turn")
     def hive_turn(req: TurnRequest):
         query = (req.query or "").strip()
         if not query:
             raise HTTPException(422, "query must not be empty")
-        hive = st.hive_for(req.conversation_id, req.config, engine=req.engine)
+        strata = st.hive_for(req.conversation_id, req.config, engine=req.engine)
         # Per-conversation inference target: provider and/or model override
         # swaps the conversation's backend (multi-model: pick any loaded one).
         current_provider = st._conv_provider.get(req.conversation_id)
         wants_backend = (req.provider and req.provider != current_provider) \
-            or (req.model and isinstance(hive.backend, OpenAICompatBackend)
-                and req.model != hive.backend.model)
-        if wants_backend and isinstance(hive.backend, OpenAICompatBackend):
+            or (req.model and isinstance(strata.backend, OpenAICompatBackend)
+                and req.model != strata.backend.model)
+        if wants_backend and isinstance(strata.backend, OpenAICompatBackend):
             new_backend = st.backend_factory(req.model, provider=req.provider)
-            hive.backend = new_backend
-            hive.cache = KVCacheManager(new_backend)
+            strata.backend = new_backend
+            strata.cache = KVCacheManager(new_backend)
             st._conv_provider[req.conversation_id] = req.provider \
                 or st.registry.default
         st.begin(req.conversation_id)
         with st.lock_for(req.conversation_id):
-            result = hive.process_turn(req.query, conversation_id=req.conversation_id)
-            st.save_conversation(req.conversation_id, hive)
+            result = strata.process_turn(req.query, conversation_id=req.conversation_id)
+            st.save_conversation(req.conversation_id, strata)
         st.end(req.conversation_id)
         assembled = result.assembled
         return {
@@ -1655,38 +1674,38 @@ def create_app(
             "timings": result.timings,
             "pes": result.pes,
             "degradation_level": result.degradation_level,
-            "inspection": hive.inspect_turn(result),
+            "inspection": strata.inspect_turn(result),
         }
 
-    @app.get("/v1/hive/inspect/{conversation_id}")
+    @app.get("/v1/strata/inspect/{conversation_id}")
     def hive_inspect(conversation_id: str):
         """Last turn's full curation detail for the prompt inspector."""
         with st.global_lock:
-            hive = st.hives.get(conversation_id)
-        if hive is None:
+            strata = st.hives.get(conversation_id)
+        if strata is None:
             raise HTTPException(404, f"no such conversation: {conversation_id}")
-        if not hasattr(hive, "_last_turn_result") or hive._last_turn_result is None:
+        if not hasattr(strata, "_last_turn_result") or strata._last_turn_result is None:
             raise HTTPException(404, "no turn has been processed yet")
-        return hive.inspect_turn(hive._last_turn_result)
+        return strata.inspect_turn(strata._last_turn_result)
 
-    @app.post("/v1/hive/reset")
+    @app.post("/v1/strata/reset")
     def hive_reset(req: ResetRequest):
         st.drop(req.conversation_id)
         return {"ok": True}
 
     # ------------------------------------------------------------------
-    # Curate / observe (Seam A, dsh-hive flow): the caller's own shell
+    # Curate / observe (Seam A, dsh-strata flow): the caller's own shell
     # generates â€” the sidecar only assembles context and ingests replies.
-    @app.post("/v1/hive/curate")
+    @app.post("/v1/strata/curate")
     def hive_curate(req: CurateRequest):
         query = (req.query or "").strip()
         if not query:
             raise HTTPException(422, "query must not be empty")
-        hive = st.hive_for(req.conversation_id, req.config, with_backend=False,
+        strata = st.hive_for(req.conversation_id, req.config, with_backend=False,
                            engine=req.engine)
         with st.lock_for(req.conversation_id):
-            result = hive.process_turn(query, conversation_id=req.conversation_id)
-            st.save_conversation(req.conversation_id, hive)
+            result = strata.process_turn(query, conversation_id=req.conversation_id)
+            st.save_conversation(req.conversation_id, strata)
         assembled = result.assembled
         return {
             "conversation_id": req.conversation_id,
@@ -1701,30 +1720,30 @@ def create_app(
             "degradation_level": result.degradation_level,
         }
 
-    @app.post("/v1/hive/observe")
+    @app.post("/v1/strata/observe")
     def hive_observe(req: ObserveRequest):
         # lazily create: external integrators may observe before ever calling
         # curate (e.g. feeding back a reply for a session the studio has
         # never seen); the conversation materializes here.
-        hive = st.hive_for(req.conversation_id, None, with_backend=False)
+        strata = st.hive_for(req.conversation_id, None, with_backend=False)
         reply = (req.reply or "").strip()
         stored = False
         if reply and not (
-            hive.config.filter_hedge_replies and Hive._is_hedge_reply(reply)
+            strata.config.filter_hedge_replies and Strata._is_hedge_reply(reply)
         ):
             st.begin(req.conversation_id)
             with st.lock_for(req.conversation_id):
-                hive.store.add_chunk(hive.turn, reply)
-                st.save_conversation(req.conversation_id, hive)
+                strata.store.add_chunk(strata.turn, reply)
+                st.save_conversation(req.conversation_id, strata)
             st.end(req.conversation_id)
             stored = True
-        return {"ok": True, "stored": stored, "turn": hive.turn}
+        return {"ok": True, "stored": stored, "turn": strata.turn}
 
     # ------------------------------------------------------------------
-    # Streaming chat (LM-Studio-style token stream) THROUGH the hive:
+    # Streaming chat (LM-Studio-style token stream) THROUGH the strata:
     # curate -> stream the provider's SSE -> observe the reply back into
     # the store. Events: {type: meta|delta|done|error}.
-    @app.post("/v1/hive/stream")
+    @app.post("/v1/strata/stream")
     async def hive_stream(req: StreamTurnRequest):
         query = (req.query or "").strip()
         if not query:
@@ -1737,11 +1756,11 @@ def create_app(
         base_url = provider.base_url.rstrip("/")
         headers = {"Authorization": f"Bearer {provider.api_key or 'lm-studio'}",
                    **provider.extra_headers}
-        hive = st.hive_for(req.conversation_id, req.config, with_backend=False)
+        strata = st.hive_for(req.conversation_id, req.config, with_backend=False)
         st.begin(req.conversation_id)
         with st.lock_for(req.conversation_id):
-            result = hive.process_turn(query, conversation_id=req.conversation_id)
-            st.save_conversation(req.conversation_id, hive)
+            result = strata.process_turn(query, conversation_id=req.conversation_id)
+            st.save_conversation(req.conversation_id, strata)
         st.end(req.conversation_id)
         assembled = result.assembled
         curated = assembled.content if assembled is not None else ""
@@ -1753,10 +1772,10 @@ def create_app(
             ],
             "stream": True,
             "stream_options": {"include_usage": True},
-            **(hive.config.sampling or {}),
+            **(strata.config.sampling or {}),
         }
-        if hive.config.max_tokens:
-            payload["max_tokens"] = hive.config.max_tokens
+        if strata.config.max_tokens:
+            payload["max_tokens"] = strata.config.max_tokens
 
         def sse():
             yield "data: " + json.dumps({
@@ -1799,11 +1818,11 @@ def create_app(
             reply = "".join(parts)
             stored = False
             if reply.strip() and not (
-                hive.config.filter_hedge_replies
-                and Hive._is_hedge_reply(reply)
+                strata.config.filter_hedge_replies
+                and Strata._is_hedge_reply(reply)
             ):
-                hive.store.add_chunk(hive.turn, reply)
-                st.save_conversation(req.conversation_id, hive)
+                strata.store.add_chunk(strata.turn, reply)
+                st.save_conversation(req.conversation_id, strata)
                 stored = True
             elapsed = max(time.time() - started, 1e-6)
             completion_tokens = (usage or {}).get("completion_tokens") or 0
@@ -1817,16 +1836,16 @@ def create_app(
 
         return StreamingResponse(sse(), media_type="text/event-stream")
 
-    @app.get("/v1/hive/defaults")
+    @app.get("/v1/strata/defaults")
     def hive_defaults():
         """HiveConfig defaults â€” the source for the UI tuning form. Overrides
         ride each turn request's `config` and apply when a conversation is
         created (reset to re-tune)."""
         return HiveConfig().to_dict()
 
-    @app.get("/v1/hive/state")
+    @app.get("/v1/strata/state")
     def hive_state(conversation_id: Optional[str] = Query(default=None)):
-        def snapshot(h: Hive) -> dict:
+        def snapshot(h: Strata) -> dict:
             return {
                 "turn": h.turn,
                 "store_chunks": len(h.store.all_chunks()),
@@ -1835,14 +1854,14 @@ def create_app(
 
         if conversation_id:
             with st.global_lock:
-                hive = st.hives.get(conversation_id)
-            if hive is None and st.state_dir is not None \
+                strata = st.hives.get(conversation_id)
+            if strata is None and st.state_dir is not None \
                     and st._conv_path(conversation_id).exists():
                 # lazy-restore a persisted conversation so state survives restarts
-                hive = st.hive_for(conversation_id, None)
-            if hive is None:
+                strata = st.hive_for(conversation_id, None)
+            if strata is None:
                 raise HTTPException(404, f"no such conversation: {conversation_id}")
-            return {**snapshot(hive), "conversation_id": conversation_id}
+            return {**snapshot(strata), "conversation_id": conversation_id}
         with st.global_lock:
             items = {cid: snapshot(h) for cid, h in st.hives.items()}
         return {"count": len(items), "conversations": items}
@@ -1874,7 +1893,7 @@ def create_app(
     # Built-in mock OpenAI-compatible chat completions: pairs with
     # `python -m harness --mock` so a dsh shell (pi-ai openai-completions
     # route) can run end-to-end offline. The reply deterministically echoes
-    # what the request actually contained â€” context size and whether hive
+    # what the request actually contained â€” context size and whether strata
     # content reached the model â€” which makes it a live probe of Seam A.
     # When the conversation asks for the benchmark, it emits a proper
     # hive_bench_run tool call and then acknowledges the tool result, so the
@@ -1889,14 +1908,14 @@ def create_app(
                 system_txt = str(m.get("content") or "")
             elif m.get("role") == "user":
                 user_txt = str(m.get("content") or "")
-        # the exact marker dsh-hive appends as a snapshot user message
+        # the exact marker dsh-strata appends as a snapshot user message
         curated = any(
-            "hive-curated-context" in str(m.get("content") or "")
+            "strata-curated-context" in str(m.get("content") or "")
             for m in messages
         )
         head = " ".join(system_txt.split())[:160]
         return (
-            f"[hive-mock] model={payload.get('model', '?')} "
+            f"[strata-mock] model={payload.get('model', '?')} "
             f"system={len(system_txt)}ch user={len(user_txt)}ch "
             f"hive_context={'yes' if curated else 'no'} "
             f"context_head={head!r}"
@@ -2041,7 +2060,7 @@ def create_app(
     # Real OpenAI-compatible passthrough (curated) â€” Mode A integration
     # (OpenCode, dsh, any OpenAI client): standard /chat/completions wire
     # shape, curated system context, the reply observed back into the
-    # store. Conversation key: X-Hive-Conversation header > payload "user"
+    # store. Conversation key: X-Strata-Conversation header > payload "user"
     # > "default".
     @app.post("/v1/openai/chat/completions")
     async def openai_chat_completions(request: Request):
@@ -2057,7 +2076,7 @@ def create_app(
                 break
         if not query.strip():
             raise HTTPException(422, "no user message with text content")
-        cid = (request.headers.get("X-Hive-Conversation")
+        cid = (request.headers.get("X-Strata-Conversation")
                or (payload.get("user") or "") or "default")
         try:
             provider = st.registry.resolve(None)
@@ -2068,10 +2087,10 @@ def create_app(
         base_url = provider.base_url.rstrip("/")
         headers = {"Authorization": f"Bearer {provider.api_key or 'lm-studio'}",
                    **provider.extra_headers}
-        hive = st.hive_for(cid, payload.get("config"), with_backend=False)
+        strata = st.hive_for(cid, payload.get("config"), with_backend=False)
         with st.lock_for(cid):
-            result = hive.process_turn(query, conversation_id=cid)
-            st.save_conversation(cid, hive)
+            result = strata.process_turn(query, conversation_id=cid)
+            st.save_conversation(cid, strata)
         curated = result.assembled.content if result.assembled is not None else ""
         merged_sys = curated or "You are a helpful assistant."
         if messages and messages[0].get("role") == "system" \
@@ -2089,11 +2108,11 @@ def create_app(
         def observe(reply: str) -> bool:
             stored = False
             if reply.strip() and not (
-                hive.config.filter_hedge_replies
-                and Hive._is_hedge_reply(reply)
+                strata.config.filter_hedge_replies
+                and Strata._is_hedge_reply(reply)
             ):
-                hive.store.add_chunk(hive.turn, reply)
-                st.save_conversation(cid, hive)
+                strata.store.add_chunk(strata.turn, reply)
+                st.save_conversation(cid, strata)
                 stored = True
             return stored
 
@@ -2659,7 +2678,7 @@ def create_app(
         tasks = body.get("tasks") or [
             "List the files in the current directory.",
             "Create a file named trainer-test.txt containing 'hello'.",
-            "Search for the word 'hive' in .py files and report matches.",
+            "Search for the word 'strata' in .py files and report matches.",
         ]
         candidate = draft_candidate.__wrapped__ if hasattr(
             draft_candidate, "__wrapped__") else None
@@ -3125,7 +3144,7 @@ def create_app(
         return {"queued": True, "question": q}
 
 
-    @app.get("/v1/hive/mode")
+    @app.get("/v1/strata/mode")
     def hive_mode_get():
         if MODE_FILE.exists():
             try:
@@ -3136,7 +3155,7 @@ def create_app(
                         "_file": str(MODE_FILE)}
         return {"afk": False, "_file": str(MODE_FILE)}
 
-    @app.post("/v1/hive/mode")
+    @app.post("/v1/strata/mode")
     async def hive_mode_set(req: Request):
         body = await req.json()
         afk = bool(body.get("afk"))
@@ -3147,7 +3166,7 @@ def create_app(
                        "operator": "away", "note": note,
                        "preapproved": ["GREEN/YELLOW fixes",
                                        "catalog+doc regeneration",
-                                       "executing HIVE-PLAN orders",
+                                       "executing STRATA-PLAN orders",
                                        "approved-proposal implementation",
                                        "gate bug fixes"],
                        "queue_for_return": ["pushes to public masters",
@@ -3249,7 +3268,7 @@ def create_app(
         """OpenAI-compatible embeddings endpoint.
 
         Proxies to a loaded embedding llama-server (``--embedding``) when
-        available, otherwise computes embeddings locally via the hive's
+        available, otherwise computes embeddings locally via the strata's
         ultra-small drone (offline fallback). Accepts the same wire shape
         as ``POST /v1/embeddings`` from llama-server / OpenAI.
         """
@@ -3532,8 +3551,8 @@ def create_app(
                         "Two-tool coding agent with persistent bash and str_replace_editor.", 3),
             "cordis": ("Creator mode",
                        "Built for creating custom agent presets, with all Standard mode capabilities plus runtime inspection, plugin experiments, and preset-authoring guidance.", 4),
-            "hive-curator": ("Hive Curator",
-                             "Standard coding agent plus Hive curation: each turn the local sidecar assembles relevant context and observes replies, ideal for long tasks and cross-session memory. Requires a local Hive sidecar; offline it degrades to Standard.", 4),
+            "strata-curator": ("Strata Curator",
+                             "Standard coding agent plus Strata curation: each turn the local sidecar assembles relevant context and observes replies, ideal for long tasks and cross-session memory. Requires a local Strata sidecar; offline it degrades to Standard.", 4),
             "local-first": ("Local-first",
                             "Lean composition for local model routing: no cloud search or other cloud surfaces, keeps shell, filesystem, jobs, skills, goals, and planning. Use with a local inference backend or any in-session model.", 5),
         }

@@ -10,7 +10,7 @@ import hashlib
 import numpy as np
 
 from cortex.config import HiveConfig
-from cortex.hive import Hive
+from cortex.strata import Hive
 from sieve.scores import ChunkScore
 
 
@@ -44,92 +44,92 @@ def _hive(tmp_path, hot="HOTTERM", **config_kwargs):
         comb_relevant_only=True,
         **config_kwargs,
     )
-    hive = Hive(config=cfg, ultra=GateDrone(hot))
-    return hive
+    strata = Hive(config=cfg, ultra=GateDrone(hot))
+    return strata
 
 
-def _curate(hive, cid):
-    hive.store.chunks[cid].decay_multiplier = 1.8
-    hive.store.chunks[cid].times_saved = 1
+def _curate(strata, cid):
+    strata.store.chunks[cid].decay_multiplier = 1.8
+    strata.store.chunks[cid].times_saved = 1
 
 
-def _fill_store(hive, n=450):
+def _fill_store(strata, n=450):
     """Fill the store past the 3000-token ultra-small budget so low-scoring
     chunks are genuinely excluded from selection (the honest budget-pressure
     regime where stale-out archiving matters)."""
     for i in range(n):
-        hive.store.add_chunk(
+        strata.store.add_chunk(
             2 + i, f"the OTHERTHING config file number {i} settings for the deployment pipeline"
         )
 
 
 def test_stale_out_archives_unselected_old_chunks(tmp_path):
-    hive = _hive(tmp_path)
-    old = hive.store.add_chunk(1, "the HOTTERM spec says refresh every hour")
-    _curate(hive, old)
-    _fill_store(hive)
+    strata = _hive(tmp_path)
+    old = strata.store.add_chunk(1, "the HOTTERM spec says refresh every hour")
+    _curate(strata, old)
+    _fill_store(strata)
     # 25 turns of OTHERTHING queries: the HOTTERM chunk is outranked out of
     # the budget and ages past the stale wall (age 25-1 = 24 > 20)
     for _ in range(25):
-        hive.process_turn("what is the OTHERTHING config", record_exchange=False)
+        strata.process_turn("what is the OTHERTHING config", record_exchange=False)
     # the curated old chunk left the active store for the comb
-    assert old not in hive.store.chunks
-    assert old in hive.comb
-    assert hive.comb_stats["archived"] >= 1
+    assert old not in strata.store.chunks
+    assert old in strata.comb
+    assert strata.comb_stats["archived"] >= 1
 
 
 def test_gate_consults_comb_only_when_store_is_weak(tmp_path):
-    hive = _hive(tmp_path)
+    strata = _hive(tmp_path)
     # strong store match: gate must NOT fire, comb never consulted
-    hive.store.add_chunk(2, "the HOTTERM details are in the api docs")
-    hive.process_turn("what is the HOTTERM", record_exchange=False)
-    assert hive.comb_stats["gate_fired"] == 0
-    assert hive.comb_stats["resurrected"] == 0
+    strata.store.add_chunk(2, "the HOTTERM details are in the api docs")
+    strata.process_turn("what is the HOTTERM", record_exchange=False)
+    assert strata.comb_stats["gate_fired"] == 0
+    assert strata.comb_stats["resurrected"] == 0
 
     # weak store match in a fresh conversation: gate fires, the archived fact
     # is resurrected (seed the new conversation's comb directly)
-    hive.reset_conversation()
+    strata.reset_conversation()
     chunk = type("C", (), {
         "id": "comb_old", "content": "the HOTTERM spec says refresh every hour",
         "turn": 1, "fingerprint": "fp", "timestamp": "",
         "decay_multiplier": 1.8, "times_saved": 1, "last_referenced_turn": 1,
         "relevance_history": [(1, 0.7)],
     })()
-    hive.comb.put(chunk)
-    hive.store.add_chunk(1, "unrelated database migration notes")
-    hive.process_turn("what is the HOTTERM refresh policy", record_exchange=False)
-    assert hive.comb_stats["gate_fired"] == 1
-    assert hive.comb_stats["comb_hits"] >= 1
+    strata.comb.put(chunk)
+    strata.store.add_chunk(1, "unrelated database migration notes")
+    strata.process_turn("what is the HOTTERM refresh policy", record_exchange=False)
+    assert strata.comb_stats["gate_fired"] == 1
+    assert strata.comb_stats["comb_hits"] >= 1
 
 
 def test_comb_stats_finalized_per_conversation(tmp_path):
-    hive = _hive(tmp_path)
-    hive.store.add_chunk(1, "unrelated database migration notes")
-    hive.process_turn("what is the HOTTERM refresh policy", record_exchange=False)
-    hive.reset_conversation()
-    assert len(hive.comb_stats_history) == 1
-    assert hive.comb_stats == {"archived": 0, "resurrected": 0, "comb_hits": 0, "gate_fired": 0}
+    strata = _hive(tmp_path)
+    strata.store.add_chunk(1, "unrelated database migration notes")
+    strata.process_turn("what is the HOTTERM refresh policy", record_exchange=False)
+    strata.reset_conversation()
+    assert len(strata.comb_stats_history) == 1
+    assert strata.comb_stats == {"archived": 0, "resurrected": 0, "comb_hits": 0, "gate_fired": 0}
 
 
 def test_comb_prunes_unreferenced_records_by_age(tmp_path):
-    hive = _hive(tmp_path, comb_max_age_turns=100)
+    strata = _hive(tmp_path, comb_max_age_turns=100)
     record = type("C", (), {
         "id": "comb_old", "content": "the HOTTERM spec says refresh every hour",
         "turn": 1, "fingerprint": "fp", "timestamp": "",
         "decay_multiplier": 1.8, "times_saved": 1, "last_referenced_turn": 1,
         "relevance_history": [(1, 0.7)],
     })()
-    hive.comb.put(record)
-    assert record.id in hive.comb
+    strata.comb.put(record)
+    assert record.id in strata.comb
     # 150 turns: the record (referenced at turn 1) ages past the 100-turn
     # archive horizon and is pruned by the per-turn maintenance call
     for i in range(150):
-        hive.process_turn(f"turn {i} unrelated churn", record_exchange=False)
-    assert record.id not in hive.comb
+        strata.process_turn(f"turn {i} unrelated churn", record_exchange=False)
+    assert record.id not in strata.comb
 
 
 def test_stale_out_skips_never_curated_chunks(tmp_path):
-    hive = _hive(tmp_path)
+    strata = _hive(tmp_path)
     # a chunk too large to ever fit the budget is never selected - and
     # selection-as-curation means it never carries relevance history, so it is
     # never archived even when it ages past the stale wall. (The greedy budget
@@ -137,9 +137,9 @@ def test_stale_out_skips_never_curated_chunks(tmp_path):
     # curated on early turns - that is the intended surplus-tier semantics.)
     # Prose filler, not a character run: store-time hygiene (U2) collapses
     # long base64-shaped runs, which would shrink this below the budget.
-    raw = hive.store.add_chunk(1, "the HOTTERM spec says refresh every hour. " + "lorem ipsum dolor sit amet " * 300)
-    _fill_store(hive)
+    raw = strata.store.add_chunk(1, "the HOTTERM spec says refresh every hour. " + "lorem ipsum dolor sit amet " * 300)
+    _fill_store(strata)
     for _ in range(25):
-        hive.process_turn("what is the OTHERTHING config", record_exchange=False)
-    assert raw in hive.store.chunks
-    assert raw not in hive.comb
+        strata.process_turn("what is the OTHERTHING config", record_exchange=False)
+    assert raw in strata.store.chunks
+    assert raw not in strata.comb

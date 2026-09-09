@@ -5,7 +5,7 @@ from cortex.config import HiveConfig
 
 def test_defaults_roundtrip(tmp_path):
     c = HiveConfig()
-    path = tmp_path / "hive.json"
+    path = tmp_path / "strata.json"
     c.save(path)
     loaded = HiveConfig.load(path)
     assert loaded == c

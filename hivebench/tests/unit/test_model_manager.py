@@ -227,7 +227,7 @@ def test_launch_settings_reach_the_command_line(client, tmp_path):
 
 def test_hive_defaults_endpoint(client):
     c, _app = client
-    body = c.get("/v1/hive/defaults").json()
+    body = c.get("/v1/strata/defaults").json()
     assert body["max_context"] > 0
     assert "comb_gate_threshold" in body
     assert "sampling" in body  # co-added field stays exposed for the UI
@@ -276,7 +276,7 @@ def test_stream_turn_emits_events_and_stores(client, monkeypatch):
 
     monkeypatch.setattr(harness_stream_module(), "_upstream_stream", fake_upstream)
     events = []
-    with c.stream("POST", "/v1/hive/stream", json={
+    with c.stream("POST", "/v1/strata/stream", json={
         "query": "Say hello.", "conversation_id": "stream-1",
     }) as resp:
         assert resp.status_code == 200, resp.read()[:300]
@@ -291,7 +291,7 @@ def test_stream_turn_emits_events_and_stores(client, monkeypatch):
     assert done["stored"] is True and done["tokens"] == 4
     assert done["tokens_per_sec"] is not None
     # the reply was observed back into the conversation store
-    st = c.get("/v1/hive/state", params={"conversation_id": "stream-1"}).json()
+    st = c.get("/v1/strata/state", params={"conversation_id": "stream-1"}).json()
     assert st["store_chunks"] == 2  # query chunk + streamed reply chunk
     # the upstream request carried the curated context as system message
     assert "JWT" not in captured["payload"]["messages"][0]["content"] or True
@@ -313,7 +313,7 @@ def test_stream_error_is_an_event_not_a_500(client, monkeypatch):
 
     monkeypatch.setattr(harness_stream_module(), "_upstream_stream", boom)
     events = []
-    with c.stream("POST", "/v1/hive/stream", json={
+    with c.stream("POST", "/v1/strata/stream", json={
         "query": "hi", "conversation_id": "stream-err",
     }) as resp:
         assert resp.status_code == 200  # SSE keeps the contract
@@ -817,7 +817,7 @@ def test_server_page_serves(client):
     assert page.status_code == 200
     assert "Hive Studio console" in page.text
     assert "/v1/server/status" in page.text
-    # the chat pane streams through the hive
-    assert "/v1/hive/stream" in page.text
+    # the chat pane streams through the strata
+    assert "/v1/strata/stream" in page.text
     assert "chatlog" in page.text
     assert page.headers.get("cache-control") == "no-store"

@@ -4,7 +4,7 @@ Replays one or more run bundles (``run_report.json`` from
 ``experiments.generate_data``) and computes, for every user turn, three
 context sizes:
 
-  - ``hive`` — what the hive actually delivered to the model (the turn's
+  - ``strata`` — what the strata actually delivered to the model (the turn's
     assembled ``token_count``)
   - ``raw``  — the unbounded history size (every prior exchange plus the
     current query), which grows linearly with session length
@@ -51,7 +51,7 @@ def _bucket_order(label: str) -> int:
 
 
 def conversation_series(conv_turns: list[dict], fifo_budget: int) -> list[dict]:
-    """Per-turn {turn, hive, raw, fifo} for one conversation record."""
+    """Per-turn {turn, strata, raw, fifo} for one conversation record."""
     history: list[dict] = []
     points = []
     for t in conv_turns:
@@ -63,7 +63,7 @@ def conversation_series(conv_turns: list[dict], fifo_budget: int) -> list[dict]:
         fifo = estimate_tokens(fifo_ctx)
         points.append({
             "turn": t["turn"],
-            "hive": t.get("token_count", 0),
+            "strata": t.get("token_count", 0),
             "raw": raw,
             "fifo": fifo,
         })
@@ -87,8 +87,8 @@ def analyze(run_dirs: list[str | Path], fifo_budget: int) -> dict:
             series.extend(pts)
             for p in pts:
                 label = _bucket_label(p["turn"])
-                slot = buckets.setdefault(label, {"raw": [], "fifo": [], "hive": []})
-                for k in ("raw", "fifo", "hive"):
+                slot = buckets.setdefault(label, {"raw": [], "fifo": [], "strata": []})
+                for k in ("raw", "fifo", "strata"):
                     slot[k].append(p[k])
                 turns_seen += 1
         runs.append({
@@ -102,8 +102,8 @@ def analyze(run_dirs: list[str | Path], fifo_budget: int) -> dict:
         slot = buckets[label]
         table.append({
             "turns": label,
-            "n": len(slot["hive"]),
-            "hive_median": round(statistics.median(slot["hive"]), 1),
+            "n": len(slot["strata"]),
+            "hive_median": round(statistics.median(slot["strata"]), 1),
             "fifo_median": round(statistics.median(slot["fifo"]), 1),
             "raw_median": round(statistics.median(slot["raw"]), 1),
         })
@@ -131,7 +131,7 @@ def _svg(chart_path: Path, analysis: dict) -> None:
     def y(v, vmax):
         return MT + ph - (v / vmax) * ph
 
-    vmax = max(max(med("raw")), max(med("fifo")), max(med("hive")), 1) * 1.08
+    vmax = max(max(med("raw")), max(med("fifo")), max(med("strata")), 1) * 1.08
 
     def polyline(key, color):
         pts = " ".join(f"{x:.1f},{y(v, vmax):.1f}"
@@ -154,7 +154,7 @@ def _svg(chart_path: Path, analysis: dict) -> None:
     legend = [
         ("#b22222", "unbounded history (grows linearly)"),
         ("#e28c1e", "FIFO window"),
-        ("#2e7d32", "hive curated context"),
+        ("#2e7d32", "strata curated context"),
     ]
     litems = "".join(
         f'<rect x="{W-MR-268}" y="{MT+8+i*20}" width="14" height="4" fill="{c}"/>'
@@ -169,7 +169,7 @@ def _svg(chart_path: Path, analysis: dict) -> None:
 <line x1="{ML}" y1="{MT}" x2="{ML}" y2="{MT+ph}" stroke="#999"/>
 {polyline("raw", "#b22222")}
 {polyline("fifo", "#e28c1e")}
-{polyline("hive", "#2e7d32")}
+{polyline("strata", "#2e7d32")}
 {''.join(xticks)}
 <text x="{(ML+W-MR)/2:.0f}" y="{H-8}" text-anchor="middle" font-size="12" fill="#555">session length (user turns)</text>
 {litems}
@@ -190,7 +190,7 @@ def main(argv: list[str] | None = None) -> int:
 
     print(f"Turns analyzed: {analysis['turns_analyzed']} "
           f"(FIFO window {args.fifo_budget} tokens)")
-    print(f"{'turn bucket':<12}{'n':>6}{'hive':>10}{'fifo':>10}{'raw':>10}")
+    print(f"{'turn bucket':<12}{'n':>6}{'strata':>10}{'fifo':>10}{'raw':>10}")
     print("-" * 48)
     for b in analysis["buckets"]:
         print(f"{b['turns']:<12}{b['n']:>6}{b['hive_median']:>10}"

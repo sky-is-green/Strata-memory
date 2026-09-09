@@ -1,9 +1,9 @@
-"""Unit tests for cortex.hive (unified orchestrator)."""
+"""Unit tests for cortex.strata (unified orchestrator)."""
 
 from backend.lmstudio import LMStudioBackend
 from cortex.config import HiveConfig
 from cortex.e2e import FakeUltraSmall, MockTransport
-from cortex.hive import Hive
+from cortex.strata import Hive
 from logs.event_logger import EventLogger
 from sieve.medium import MediumDrone
 
@@ -21,7 +21,7 @@ def test_process_turn_basic():
     h = _hive()
     r = h.process_turn("how does authentication work")
     assert r.turn == 1
-    assert r.mode in ("hive", "no_backend")
+    assert r.mode in ("strata", "no_backend")
     assert r.assembled is not None
     assert 0.0 <= r.pes <= 100.0
     assert h.store.count() >= 1
@@ -148,7 +148,7 @@ def test_backend_generates_with_pinned_prefix():
     backend = LMStudioBackend(base_url="localhost", model="m", transport=MockTransport())
     h = _hive(backend=backend, pinned_prefix="PIN")
     r = h.process_turn("how does authentication work", conversation_id="c1")
-    assert r.mode == "hive"
+    assert r.mode == "strata"
     assert r.reply
     assert r.timings["generation_ms"] > 0
     assert backend.pinned_prefix == "PIN"
@@ -247,7 +247,7 @@ def test_empty_reply_reasoning_starved_warns_once(tmp_path, capsys):
     )
     r1 = h.process_turn("q1")
     assert r1.reply == ""
-    assert r1.mode == "hive"  # not a crash
+    assert r1.mode == "strata"  # not a crash
     h.process_turn("q2")  # second turn: no duplicate warning
     logger.flush()
     logger.close()

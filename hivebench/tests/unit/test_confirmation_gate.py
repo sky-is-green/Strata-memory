@@ -16,7 +16,7 @@ from cortex.confirmation_gate import (
     content_terms,
     fact_terms,
 )
-from cortex.hive import Hive
+from cortex.strata import Hive
 from cortex.e2e import FakeUltraSmall
 
 FIXTURE_ANSWER_MAP = {
@@ -210,15 +210,15 @@ def test_gate_summary_counts():
 
 
 def test_gate_disabled_by_default_uses_rule_filter():
-    hive = Hive(HiveConfig(), ultra=FakeUltraSmall())
-    assert hive.gate is None
-    assert hive.config.gate_enabled is False
+    strata = Hive(HiveConfig(), ultra=FakeUltraSmall())
+    assert strata.gate is None
+    assert strata.config.gate_enabled is False
 
 
 def test_gate_wired_when_enabled_and_hedges_not_stored():
     config = HiveConfig(gate_enabled=True)
     imp = FixtureImprint(FIXTURE_ANSWER_MAP)
-    hive = Hive(
+    strata = Hive(
         config,
         ultra=FakeUltraSmall(),
         backend=_StubBackend({
@@ -228,16 +228,16 @@ def test_gate_wired_when_enabled_and_hedges_not_stored():
         }),
         confirmation_imprint=imp,
     )
-    assert hive.gate is not None
+    assert strata.gate is not None
 
     # Turn 1: factual reply -> accept -> stored.
-    r1 = hive.process_turn(
+    r1 = strata.process_turn(
         "What is the rate limit for the API?", conversation_id="conv_a"
     )
     assert r1.reply
-    stored_contents = [c.content for c in hive.store.all_chunks()]
+    stored_contents = [c.content for c in strata.store.all_chunks()]
     assert any("100 requests per minute" in c for c in stored_contents)
-    assert hive.gate_stats["decisions"][-1]["decision"] == "accept"
+    assert strata.gate_stats["decisions"][-1]["decision"] == "accept"
 
     # Turn 2: a refusal reply -> reject -> NOT stored (query chunk still is).
     hive2 = Hive(
@@ -260,14 +260,14 @@ def test_mechanism_attribution_gate_disabled_matches_rule():
     """With the gate disabled, the rule-based hedge filter governs exactly
     as before (the mechanism-attribution condition)."""
     config = HiveConfig(filter_hedge_replies=True)
-    hive = Hive(
+    strata = Hive(
         config, ultra=FakeUltraSmall(),
         backend=_StubBackend({
             "q": "I don't have access to that information.",
         }),
     )
-    hive.process_turn("q", conversation_id="conv_a")
-    stored = [c.content for c in hive.store.all_chunks()]
+    strata.process_turn("q", conversation_id="conv_a")
+    stored = [c.content for c in strata.store.all_chunks()]
     assert len(stored) == 1  # query only; hedge filtered by the rule
 
 
@@ -275,7 +275,7 @@ def test_digest_imprint_wiring_accumulates_accepted_facts():
     """Live mode: the digest imprint grows from accepted replies, so a later
     ask about an established fact is graded against it."""
     config = HiveConfig(gate_enabled=True)
-    hive = Hive(
+    strata = Hive(
         config, ultra=FakeUltraSmall(),
         backend=_StubBackend({
             "Tell me about the new feature": (
@@ -288,17 +288,17 @@ def test_digest_imprint_wiring_accumulates_accepted_facts():
             ),
         }),
     )  # no imprint injected -> DigestImprint
-    assert isinstance(hive.gate_imprint, DigestImprint)
+    assert isinstance(strata.gate_imprint, DigestImprint)
 
-    hive.process_turn("Tell me about the new feature", conversation_id="c1")
-    facts = hive.gate_imprint.facts_for("c1", "What does the sync worker do?")
+    strata.process_turn("Tell me about the new feature", conversation_id="c1")
+    facts = strata.gate_imprint.facts_for("c1", "What does the sync worker do?")
     assert "backoff" in facts  # established by the first accepted reply
 
-    d = hive.gate.decide(
+    d = strata.gate.decide(
         "c1", "What does the sync worker do?",
         "The sync worker retries failed jobs with exponential backoff and a "
         "circuit breaker.",
-        hive.gate_imprint,
+        strata.gate_imprint,
     )
     assert d.decision == "accept"
     assert d.ingestion_ratio is not None and d.ingestion_ratio > 0

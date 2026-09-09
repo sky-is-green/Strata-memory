@@ -102,7 +102,7 @@ def test_openai_chat_completions_non_stream(client, monkeypatch):
     # model resolves from the provider config, not the client
     assert fake.payload["model"] == "m1"
     # the reply was observed back into the store (2 chunks: query + reply)
-    st = c.get("/v1/hive/state", params={"conversation_id": "default"}).json()
+    st = c.get("/v1/strata/state", params={"conversation_id": "default"}).json()
     assert st["turn"] == 1
     assert st["store_chunks"] >= 2
 
@@ -134,7 +134,7 @@ def test_openai_chat_completions_stream_relays_and_observes(client, monkeypatch)
     assert "data: [DONE]" in text
     assert "JWT tokens" in text and "with rotation" in text
     # reply observed back (non-hedge, stored)
-    st = c.get("/v1/hive/state", params={"conversation_id": "default"}).json()
+    st = c.get("/v1/strata/state", params={"conversation_id": "default"}).json()
     assert st["store_chunks"] >= 2
 
 
@@ -158,7 +158,7 @@ def test_openai_chat_completions_conversation_header_and_errors(client, monkeypa
         "messages": [{"role": "user", "content": "Which tokens do I use for auth expiry?"}],
     }, headers={"X-Hive-Conversation": "proj-a"})
     assert r.status_code == 200
-    st = c.get("/v1/hive/state", params={"conversation_id": "proj-a"}).json()
+    st = c.get("/v1/strata/state", params={"conversation_id": "proj-a"}).json()
     assert st["turn"] == 1
 
 
@@ -227,7 +227,7 @@ def test_git_exclude_protection_is_idempotent(tmp_path):
 
 def test_turn_returns_curated_reply(client):
     c, _app = client
-    r = c.post("/v1/hive/turn", json={
+    r = c.post("/v1/strata/turn", json={
         "query": "How does JWT authentication work?",
         "conversation_id": "c1",
     })
@@ -235,13 +235,13 @@ def test_turn_returns_curated_reply(client):
     body = r.json()
     assert body["conversation_id"] == "c1"
     assert body["reply"].startswith("[mock] re:")
-    assert body["mode"] in ("hive", "no_backend")
+    assert body["mode"] in ("strata", "no_backend")
     assert body["error"] is None
     assert body["budget"] > 0
     assert body["turn"] == 1
     assert "total_ms" in body["timings"]
     # turn 1 has no stored history yet; turn 2 must carry curated context
-    second = c.post("/v1/hive/turn", json={
+    second = c.post("/v1/strata/turn", json={
         "query": "Follow-up about the JWT expiry claim", "conversation_id": "c1",
     }).json()
     assert second["assembled_content"]
@@ -250,8 +250,8 @@ def test_turn_returns_curated_reply(client):
 def test_second_turn_increments_and_state_grows(client):
     c, _app = client
     for _ in range(2):
-        c.post("/v1/hive/turn", json={"query": "tell me about JWT", "conversation_id": "c1"})
-    st = c.get("/v1/hive/state", params={"conversation_id": "c1"}).json()
+        c.post("/v1/strata/turn", json={"query": "tell me about JWT", "conversation_id": "c1"})
+    st = c.get("/v1/strata/state", params={"conversation_id": "c1"}).json()
     assert st["turn"] == 2
     assert st["store_chunks"] >= 4  # query+reply per turn (hedge-filter permitting)
     assert set(st["comb_stats"]) == {"archived", "resurrected", "comb_hits", "gate_fired"}
@@ -259,48 +259,48 @@ def test_second_turn_increments_and_state_grows(client):
 
 def test_state_lists_all_conversations_and_404s_unknown(client):
     c, _app = client
-    c.post("/v1/hive/turn", json={"query": "q about JWT", "conversation_id": "a"})
-    c.post("/v1/hive/turn", json={"query": "q about JWT", "conversation_id": "b"})
-    st = c.get("/v1/hive/state").json()
+    c.post("/v1/strata/turn", json={"query": "q about JWT", "conversation_id": "a"})
+    c.post("/v1/strata/turn", json={"query": "q about JWT", "conversation_id": "b"})
+    st = c.get("/v1/strata/state").json()
     assert st["count"] == 2
     assert set(st["conversations"]) == {"a", "b"}
-    assert c.get("/v1/hive/state", params={"conversation_id": "zzz"}).status_code == 404
+    assert c.get("/v1/strata/state", params={"conversation_id": "zzz"}).status_code == 404
 
 
 def test_reset_drops_conversation_state(client):
     c, _app = client
-    c.post("/v1/hive/turn", json={"query": "JWT please", "conversation_id": "c1"})
-    assert c.post("/v1/hive/reset", json={"conversation_id": "c1"}).json()["ok"]
-    st = c.get("/v1/hive/state").json()
+    c.post("/v1/strata/turn", json={"query": "JWT please", "conversation_id": "c1"})
+    assert c.post("/v1/strata/reset", json={"conversation_id": "c1"}).json()["ok"]
+    st = c.get("/v1/strata/state").json()
     assert st["count"] == 0
-    body = c.post("/v1/hive/turn", json={"query": "JWT again", "conversation_id": "c1"}).json()
+    body = c.post("/v1/strata/turn", json={"query": "JWT again", "conversation_id": "c1"}).json()
     assert body["turn"] == 1  # fresh conversation
 
 
 def test_empty_query_is_422(client):
     c, _app = client
-    assert c.post("/v1/hive/turn", json={"query": "   "}).status_code == 422
+    assert c.post("/v1/strata/turn", json={"query": "   "}).status_code == 422
 
 
 def test_config_overrides_applied_on_creation(client):
     c, app = client
-    r = c.post("/v1/hive/turn", json={
+    r = c.post("/v1/strata/turn", json={
         "query": "JWT", "conversation_id": "cfg",
         "config": {"max_context": 4096, "not_a_real_field": 1},
     })
     assert r.status_code == 200
-    hive = app.state.harness.hives["cfg"]
-    assert hive.config.max_context == 4096  # unknown key silently dropped
+    strata = app.state.harness.hives["cfg"]
+    assert strata.config.max_context == 4096  # unknown key silently dropped
 
 
 def test_model_override_swaps_conversation_backend(client):
     c, app = client
-    c.post("/v1/hive/turn", json={
+    c.post("/v1/strata/turn", json={
         "query": "JWT", "conversation_id": "m", "model": "other-model",
     })
-    hive = app.state.harness.hives["m"]
-    assert hive.backend.model == "other-model"
-    assert hive.cache.backend is hive.backend
+    strata = app.state.harness.hives["m"]
+    assert strata.backend.model == "other-model"
+    assert strata.cache.backend is strata.backend
 
 
 # ---------------------------------------------------------------------------
@@ -342,7 +342,7 @@ def test_provider_config_roundtrip_masks_keys_and_persists(client, tmp_path):
 
 def test_default_backend_factory_resolves_active_provider(tmp_path, monkeypatch):
     """No injected factories -> conversations ride the active provider
-    (the 'curl /v1/hive/turn against any provider' M1 path)."""
+    (the 'curl /v1/strata/turn against any provider' M1 path)."""
     monkeypatch.chdir(tmp_path)
     recorded = {}
 
@@ -363,8 +363,8 @@ def test_default_backend_factory_resolves_active_provider(tmp_path, monkeypatch)
                        "api_key": "sk-x", "model": "deepseek-chat"}],
         "default": "ds",
     })
-    r = c.post("/v1/hive/turn", json={"query": "JWT", "conversation_id": "t"})
-    assert r.status_code == 200  # generation errors are contained by the hive
+    r = c.post("/v1/strata/turn", json={"query": "JWT", "conversation_id": "t"})
+    assert r.status_code == 200  # generation errors are contained by the strata
     assert recorded["base_url"] == "https://api.deepseek.com"
     assert recorded["model"] == "deepseek-chat"
     assert recorded["api_key"] == "sk-x"
@@ -419,11 +419,11 @@ def test_models_endpoint_probe_flag(client, monkeypatch):
 
 
 # ---------------------------------------------------------------------------
-# curate / observe (dsh-hive Seam A flow) + built-in mock chat completions
+# curate / observe (dsh-strata Seam A flow) + built-in mock chat completions
 # ---------------------------------------------------------------------------
 def test_curate_then_observe_feeds_store_without_generation(client):
     c, app = client
-    first = c.post("/v1/hive/curate", json={
+    first = c.post("/v1/strata/curate", json={
         "query": "What is the JWT refresh policy?",
         "conversation_id": "agent-1",
     }).json()
@@ -431,37 +431,37 @@ def test_curate_then_observe_feeds_store_without_generation(client):
     assert first["reply" if "reply" in first else "assembled_content"] is not None
     assert first["budget"] > 0
 
-    r = c.post("/v1/hive/observe", json={
+    r = c.post("/v1/strata/observe", json={
         "conversation_id": "agent-1",
         "reply": "The JWT access token expires after 3600 seconds.",
     }).json()
     assert r == {"ok": True, "stored": True, "turn": 1}
 
-    st = c.get("/v1/hive/state", params={"conversation_id": "agent-1"}).json()
+    st = c.get("/v1/strata/state", params={"conversation_id": "agent-1"}).json()
     assert st["store_chunks"] == 2  # query chunk + observed reply chunk
 
     # turn 2: the observed fact must now be retrievable into the context
-    second = c.post("/v1/hive/curate", json={
+    second = c.post("/v1/strata/curate", json={
         "query": "How often must a JWT client refresh?",
         "conversation_id": "agent-1",
     }).json()
     assert second["turn"] == 2
-    hive = app.state.harness.hives["agent-1"]
-    stored_contents = [ch.content for ch in hive.store.all_chunks()]
+    strata = app.state.harness.hives["agent-1"]
+    stored_contents = [ch.content for ch in strata.store.all_chunks()]
     assert any("3600" in content for content in stored_contents)
 
 
 def test_curate_hive_has_no_backend(client):
     c, app = client
-    c.post("/v1/hive/curate", json={"query": "q on JWT", "conversation_id": "nb"})
-    hive = app.state.harness.hives["nb"]
-    assert hive.backend is None
+    c.post("/v1/strata/curate", json={"query": "q on JWT", "conversation_id": "nb"})
+    strata = app.state.harness.hives["nb"]
+    assert strata.backend is None
 
 
 def test_observe_hedge_reply_not_stored(client):
     c, _app = client
-    c.post("/v1/hive/curate", json={"query": "JWT?", "conversation_id": "h"})
-    r = c.post("/v1/hive/observe", json={
+    c.post("/v1/strata/curate", json={"query": "JWT?", "conversation_id": "h"})
+    r = c.post("/v1/strata/observe", json={
         "conversation_id": "h",
         "reply": "I do not have that information regarding your account.",
     }).json()
@@ -470,12 +470,12 @@ def test_observe_hedge_reply_not_stored(client):
 
 def test_observe_unknown_conversation_lazy_creates(client):
     c, _app = client
-    r = c.post("/v1/hive/observe", json={
+    r = c.post("/v1/strata/observe", json={
         "conversation_id": "ghost", "reply": "stored text",
     })
     assert r.status_code == 200
     assert r.json() == {"ok": True, "stored": True, "turn": 0}
-    st = c.get("/v1/hive/state", params={"conversation_id": "ghost"}).json()
+    st = c.get("/v1/strata/state", params={"conversation_id": "ghost"}).json()
     assert st["store_chunks"] >= 1
 
 
@@ -484,8 +484,8 @@ def test_mock_chat_completions_non_stream_reports_context(client):
     r = c.post("/v1/chat/completions", json={
         "model": "mock-model",
         "messages": [
-            {"role": "system", "content": "<hive>HIVE CONTEXT: jwt facts</hive>"},
-            {"role": "user", "content": "<hive-curated-context>jwt facts</hive-curated-context>"},
+            {"role": "system", "content": "<strata>HIVE CONTEXT: jwt facts</strata>"},
+            {"role": "user", "content": "<strata-curated-context>jwt facts</strata-curated-context>"},
         ],
     })
     assert r.status_code == 200
@@ -583,7 +583,7 @@ def test_mock_chat_completions_stream_sse(client):
         for ln in lines[:-1]
         if _json.loads(ln[6:])["choices"][0]["delta"].get("content")
     )
-    assert "[hive-mock]" in deltas
+    assert "[strata-mock]" in deltas
     final = _json.loads(lines[-2][6:])
     assert final["choices"][0]["finish_reason"] == "stop"
     assert "usage" in final
@@ -594,7 +594,7 @@ def test_curate_full_flow_with_mock_llm_roundtrip(client):
     chat endpoint) -> observe; the store then retrieves the fact."""
     c, _app = client
     cid = "sess-demo"
-    cur = c.post("/v1/hive/curate", json={
+    cur = c.post("/v1/strata/curate", json={
         "query": "Remember: deploy token rotation is 90 days.",
         "conversation_id": cid,
     }).json()
@@ -606,11 +606,11 @@ def test_curate_full_flow_with_mock_llm_roundtrip(client):
         ],
     }).json()
     assert "system=0ch" not in chat["choices"][0]["message"]["content"]
-    c.post("/v1/hive/observe", json={
+    c.post("/v1/strata/observe", json={
         "conversation_id": cid,
         "reply": "Deploy tokens rotate every 90 days per policy.",
     })
-    nxt = c.post("/v1/hive/curate", json={
+    nxt = c.post("/v1/strata/curate", json={
         "query": "What is the deploy token rotation period?",
         "conversation_id": cid,
     }).json()
@@ -639,8 +639,8 @@ def test_conversation_survives_sidecar_restart(tmp_path, monkeypatch):
     monkeypatch.chdir(tmp_path)
     c1 = TestClient(_make_app(tmp_path))
     cid = "ws-demo-workspace"
-    c1.post("/v1/hive/curate", json={"query": "JWT refresh is 3600s", "conversation_id": cid})
-    c1.post("/v1/hive/observe", json={
+    c1.post("/v1/strata/curate", json={"query": "JWT refresh is 3600s", "conversation_id": cid})
+    c1.post("/v1/strata/observe", json={
         "conversation_id": cid, "reply": "Access tokens rotate every 90 days.",
     })
     assert (tmp_path / "harness_state").is_dir()
@@ -648,14 +648,14 @@ def test_conversation_survives_sidecar_restart(tmp_path, monkeypatch):
 
     # a brand-new app instance (= restarted sidecar) restores the conversation
     c2 = TestClient(_make_app(tmp_path))
-    st = c2.get("/v1/hive/state", params={"conversation_id": cid}).json()
+    st = c2.get("/v1/strata/state", params={"conversation_id": cid}).json()
     assert st["turn"] == 1
     assert st["store_chunks"] == 2
 
     # memory works across the restart: a PRE-restart chunk is retrieved into
     # the new context (the fake drone merges same-domain chunks via its
     # constant embeddings, so the kept copy is the turn-1 query)
-    nxt = c2.post("/v1/hive/curate", json={
+    nxt = c2.post("/v1/strata/curate", json={
         "query": "What is the token rotation period?", "conversation_id": cid,
     }).json()
     assert nxt["turn"] == 2
@@ -666,15 +666,15 @@ def test_conversation_survives_sidecar_restart(tmp_path, monkeypatch):
 def test_reset_deletes_persisted_state(tmp_path, monkeypatch):
     monkeypatch.chdir(tmp_path)
     c1 = TestClient(_make_app(tmp_path))
-    c1.post("/v1/hive/curate", json={"query": "JWT facts", "conversation_id": "doomed"})
+    c1.post("/v1/strata/curate", json={"query": "JWT facts", "conversation_id": "doomed"})
     files = list((tmp_path / "harness_state").glob("conv-*.json"))
     assert len(files) == 1
 
-    c1.post("/v1/hive/reset", json={"conversation_id": "doomed"})
+    c1.post("/v1/strata/reset", json={"conversation_id": "doomed"})
     assert list((tmp_path / "harness_state").glob("conv-*.json")) == []
 
     c2 = TestClient(_make_app(tmp_path))
-    body = c2.post("/v1/hive/curate", json={
+    body = c2.post("/v1/strata/curate", json={
         "query": "JWT facts", "conversation_id": "doomed",
     }).json()
     assert body["turn"] == 1  # fresh, not restored
@@ -684,7 +684,7 @@ def test_conversation_filename_never_escapes_state_dir(tmp_path, monkeypatch):
     monkeypatch.chdir(tmp_path)
     c = TestClient(_make_app(tmp_path))
     evil = "../../outside"
-    c.post("/v1/hive/curate", json={"query": "JWT", "conversation_id": evil})
+    c.post("/v1/strata/curate", json={"query": "JWT", "conversation_id": evil})
     # content-hashed filename: nothing written outside state dir
     assert not (tmp_path / "outside").exists()
     assert len(list((tmp_path / "harness_state").glob("conv-*.json"))) == 1
@@ -708,7 +708,7 @@ def test_disabled_persistence_writes_nothing(tmp_path, monkeypatch):
         state_dir="",
     )
     c = TestClient(app)
-    c.post("/v1/hive/curate", json={"query": "JWT", "conversation_id": "x"})
+    c.post("/v1/strata/curate", json={"query": "JWT", "conversation_id": "x"})
     assert not (tmp_path / "harness_state").exists()
 
 
@@ -845,7 +845,7 @@ def test_token_auth_guard(tmp_path, monkeypatch):
     assert c.get("/health").status_code == 200  # unguarded
     assert c.post("/v1/commands/run", json={"line": "/status"}).status_code == 401
     ok = c.post("/v1/commands/run", json={"line": "/status"},
-                headers={"x-hive-token": "sekrit"})
+                headers={"x-strata-token": "sekrit"})
     assert ok.status_code == 200 and ok.json()["kind"] == "success"
 
 
@@ -909,9 +909,9 @@ def test_command_mode_sets_transport(client):
 def test_command_save_exports_transcript(client, tmp_path):
     c, app = client
     cid = "save-me"
-    c.post("/v1/hive/curate", json={"query": "The refresh token is 3600s.",
+    c.post("/v1/strata/curate", json={"query": "The refresh token is 3600s.",
                                     "conversation_id": cid})
-    c.post("/v1/hive/observe", json={
+    c.post("/v1/strata/observe", json={
         "conversation_id": cid, "reply": "Access tokens rotate every 90 days."})
     r = c.post("/v1/commands/run", json={
         "line": f"/save demo-{cid}", "conversation_id": cid}).json()

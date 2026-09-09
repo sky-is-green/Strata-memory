@@ -132,7 +132,7 @@ def run_policy(convs: list[dict], ultra, keep: str) -> tuple[list[dict], int]:
     recap answers are canonical ("The {aspect} for the {feature} is
     {decision}."), so recap facts are pure decision terms."""
     from cortex.baselines.metrics import estimate_tokens
-    from cortex.hive import Hive
+    from cortex.strata import Hive
     from cortex.routing import DroneRouter, EscalationHandler
     from experiments.retrieval_diagnostic import (
         _answer_fact_terms, _content_terms, _fixture_answer_map,

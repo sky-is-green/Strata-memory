@@ -7,7 +7,7 @@ Groups
                      precision, routing/classifier accuracy, queen, P1-P10,
                      P5 training, A/B statistics).
 - **skills**       : component functionality & integration correctness (logger,
-                     drones, hive context, backends, security, resilience, E2E).
+                     drones, strata context, backends, security, resilience, E2E).
 - **maximum**      : everything (used for full coverage / hardware min-maxing).
 
 Each group reports PASS/FAIL plus the measured duration and an estimated time.
@@ -33,7 +33,7 @@ import time
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[2]
-HIVE = ROOT / "hive"
+HIVE = ROOT / "strata"
 HIVEBENCH = ROOT / "hivebench"
 TESTS = HIVEBENCH / "tests"
 PY = [sys.executable]
