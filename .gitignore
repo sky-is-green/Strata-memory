@@ -130,3 +130,18 @@ Thumbs.db
 .opencode/
 opencode.json
 *.whl
+
+# hive-ops coordination state (local-only; only scripts/** is tracked)
+QUEEN.md
+BEE-GUARD.md
+BEE-BETA.md
+HIVE-OPS.md
+HIVE-RESEARCH.md
+PROPOSALS.md
+STRATA-PLAN.md
+.claims/
+.bee-status/
+hive-status.log
+RESEARCH/
+RESEARCH-QUEUE.md
+*.local.md
