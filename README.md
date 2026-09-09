@@ -1,8 +1,8 @@
-# HiveMemory / HiveBench
+# Strata-Memory / HiveBench
 
 [![CI](https://github.com/sky-is-green/strata-memory/actions/workflows/ci.yml/badge.svg)](https://github.com/sky-is-green/strata-memory/actions/workflows/ci.yml)
 
-**HiveMemory** is an external, multi-agent context-curation layer for
+**Strata-Memory** is an external, multi-agent context-curation layer for
 long-horizon LLM conversations. It sits between a user and a local LLM backend,
 filtering, scoring, compressing, and reassembling conversation history into a
 bounded, high-relevance context window for every turn, so a generative model
