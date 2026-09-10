@@ -131,7 +131,7 @@ Thumbs.db
 opencode.json
 *.whl
 
-# hive-ops coordination state (local-only; only scripts/** is tracked)
+# hive-ops coordination state (local-only; AGENTS.md and scripts/** are tracked)
 QUEEN.md
 BEE-GUARD.md
 BEE-BETA.md
