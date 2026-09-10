@@ -62,6 +62,7 @@ INTELLIGENCE = [
     "hivebench/tests/unit/test_queen.py",
     "hivebench/tests/unit/test_optimization.py",
     "hivebench/tests/unit/test_ab_test.py",
+    "hivebench/tests/unit/test_mcp_battery.py",
     "hivebench/tests/unit/test_ablation.py",
     "hivebench/tests/unit/test_labeling.py",
     "hivebench/tests/unit/test_false_eviction.py",
