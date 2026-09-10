@@ -104,19 +104,21 @@ project cleanly.
 
 ## Mode C, dsh plugin (deepest integration)
 
-For the dsh fork (`deepseek-harness`, pinned `b150a551b8`), the harness spec
-defines a full plugin contract; see `HARNESS-SPEC.md` §3.1:
+For the dsh fork (`deepseek-harness`, pinned `b150a551b8`), the plugin
+contract (folded here from HARNESS-SPEC §3.1; this section is self-contained):
 
-1. The plugin listens at **`agent/pre-step`**: the documented extension point
-   for "decides what the model sees".
-2. It calls the sidecar `POST /v1/strata/turn` with
-   `{query, conversation_id, model?}` and rewrites the system prompt with the
-   curated context (single leading system message, strict chat templates
-   require it).
-3. Model adapters register through **`ctx.llm`**, so the curated context flows
-   through the same seam as any provider.
-4. The session log (`SessionEventMap`) is the evaluation record: task prompts,
-   steps, tool calls, outcomes, agentic completion can be scored from it.
+- The plugin listens at **`agent/pre-step`** — the fork's documented extension point for
+  "decides what the model sees; listeners may rewrite the claimed messages". For each step it
+  calls the sidecar `POST /v1/strata/turn` with `{query, conversation_id, model?}` and rewrites
+  the system prompt with the curated context (single leading system message — strict chat
+  templates require it).
+- Model adapters register through **`ctx.llm`** (local OpenAI-compat + hosted); curated context
+  flows through this seam exactly like the existing backend layer does.
+- The durable session log (**`SessionEventMap`**) is the evaluation record: task prompts, steps,
+  tool calls, outcomes, latencies. Agentic scoring (completion rate, tool success, cost) is
+  derived from it.
+- **`ctx.tools`, agent presets, subagents**: compose task definitions for agentic benchmarks.
+
 
 `setup.ps1` automates the whole dsh toolchain on a fresh machine (fork build,
 node carrier, SDK editable installs, llama-server), run it once, then
