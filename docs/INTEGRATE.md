@@ -124,6 +124,35 @@ contract (folded here from HARNESS-SPEC §3.1; this section is self-contained):
 node carrier, SDK editable installs, llama-server), run it once, then
 `python -m harness`.
 
+## Mode D, MCP server (tool-using clients)
+
+The sidecar itself is an MCP server: `POST http://127.0.0.1:8765/v1/mcp`
+(Streamable HTTP, served in-process — same `127.0.0.1` bind, no new port).
+Two tools, both scoped by a **required** `conversation_id` argument that is
+never implied from headers or defaults:
+
+- `strata_search({conversation_id, query, top_k?})` — recall curated context
+  for one conversation (read-only; the search itself is never stored).
+- `strata_remember({conversation_id, text})` — store a fact verbatim so later
+  searches in the same conversation recall it.
+
+One-line import per harness (restart/reload the client after adding):
+
+- LM Studio (`mcp.json`, Program → Install → Edit mcp.json):
+  `{"strata-memory": {"url": "http://127.0.0.1:8765/v1/mcp"}}`
+- opencode (`opencode.json`):
+  `{"mcp": {"strata-memory": {"type": "remote", "url": "http://127.0.0.1:8765/v1/mcp", "oauth": false}}}`
+- dsh (`cordis.yml`, one plugin instance per server):
+  `- {id: mcp-strata, name: '@deepseek-ai/dsh-mcp-client', config: {serverName: strata, transport: streamable-http, url: http://127.0.0.1:8765/v1/mcp}}`
+  (tools surface as `mcp__strata__strata_search` / `mcp__strata__strata_remember`.)
+
+Give each project/session its own `conversation_id` so stores stay isolated
+(same rule as Modes A–C). If the sidecar sets `HARNESS_TOKEN`, pass it via
+the client's MCP `headers` option as `x-strata-token`. No MCP client handy?
+Plain JSON-RPC over curl works: `initialize` → `tools/list` →
+`tools/call` (`strata_remember`, then `strata_search` in a fresh
+`conversation_id` recalls it; a different `conversation_id` does not).
+
 ## Config & gotchas
 
 - **Secrets**: provider keys live in `providers.local.json` (gitignored); the
