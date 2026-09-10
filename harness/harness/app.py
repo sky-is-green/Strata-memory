@@ -41,7 +41,7 @@ import psutil
 import requests
 from fastapi import FastAPI, File, HTTPException, Query, Request, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import HTMLResponse, RedirectResponse, StreamingResponse
+from fastapi.responses import HTMLResponse, RedirectResponse, Response, StreamingResponse
 from pydantic import BaseModel
 import queue
 
@@ -85,6 +85,9 @@ from harness.reports import (
 )
 from logs.event_logger import EventLogger
 from retention.store import ContextStore
+from strata.mcp.server import McpContext, handle_message
+from strata.mcp.tools import remember as mcp_remember
+from strata.mcp.tools import search as mcp_search
 
 
 def _list_runs(runs_root: Path) -> list[dict]:
@@ -1865,6 +1868,40 @@ def create_app(
         with st.global_lock:
             items = {cid: snapshot(h) for cid, h in st.hives.items()}
         return {"count": len(items), "conversations": items}
+
+    # ------------------------------------------------------------------
+    # MCP server (S2, Streamable HTTP): strata_search / strata_remember.
+    # Stateless JSON responses on POST /v1/mcp (no SSE sessions); GET/DELETE
+    # fall through to FastAPI's automatic 405. conversation_id is a required
+    # tool argument on every call — never implied from headers or defaults.
+    # The /v1/ token guard applies here too (pass it via the MCP `headers`
+    # option when HARNESS_TOKEN is set).
+    @app.post("/v1/mcp")
+    async def mcp_endpoint(request: Request):
+        try:
+            body = await request.json()
+        except Exception:
+            raise HTTPException(400, "invalid JSON body")
+
+        def do_remember(conversation_id: str, text: str) -> dict:
+            strata = st.strata_for(conversation_id, None, with_backend=False)
+            with st.lock_for(conversation_id):
+                payload = mcp_remember(strata, text)
+                st.save_conversation(conversation_id, strata)
+            return {"conversation_id": conversation_id, **payload}
+
+        def do_search(conversation_id: str, query: str, top_k: int) -> dict:
+            strata = st.strata_for(conversation_id, None, with_backend=False)
+            with st.lock_for(conversation_id):
+                payload = mcp_search(strata, query, top_k)
+                st.save_conversation(conversation_id, strata)
+            return {"conversation_id": conversation_id, **payload}
+
+        response = handle_message(body, McpContext(
+            remember=do_remember, search=do_search))
+        if response is None:  # notifications only — nothing to answer
+            return Response(status_code=202)
+        return response
 
     # ------------------------------------------------------------------
     @app.get("/v1/models")
