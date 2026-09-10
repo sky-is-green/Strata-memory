@@ -153,10 +153,10 @@ def test_openai_chat_completions_conversation_header_and_errors(client, monkeypa
     # empty messages -> 422
     r = c.post("/v1/openai/chat/completions", json={"messages": []})
     assert r.status_code == 422
-    # conversation keyed by the X-Hive-Conversation header
+    # conversation keyed by the X-Strata-Conversation header
     r = c.post("/v1/openai/chat/completions", json={
         "messages": [{"role": "user", "content": "Which tokens do I use for auth expiry?"}],
-    }, headers={"X-Hive-Conversation": "proj-a"})
+    }, headers={"X-Strata-Conversation": "proj-a"})
     assert r.status_code == 200
     st = c.get("/v1/strata/state", params={"conversation_id": "proj-a"}).json()
     assert st["turn"] == 1
@@ -492,7 +492,7 @@ def test_mock_chat_completions_non_stream_reports_context(client):
     body = r.json()
     content = body["choices"][0]["message"]["content"]
     assert body["choices"][0]["finish_reason"] == "stop"
-    assert "system=" in content and "hive_context=yes" in content
+    assert "system=" in content and "strata_context=yes" in content
     assert body["usage"]["total_tokens"] > 0
 
 
@@ -502,7 +502,7 @@ def test_mock_chat_completions_flags_missing_curated_marker(client):
         "model": "m",
         "messages": [{"role": "user", "content": "plain question"}],
     }).json()
-    assert "hive_context=no" in body["choices"][0]["message"]["content"]
+    assert "strata_context=no" in body["choices"][0]["message"]["content"]
 
 
 def test_mock_chat_emits_tool_call_for_benchmark_request(client):

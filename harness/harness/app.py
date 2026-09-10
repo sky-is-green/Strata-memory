@@ -3,7 +3,7 @@
 State model
 -----------
 - One ``Strata`` instance per conversation_id (fresh store + comb per
-  conversation â€” per-conversation isolation is mandatory, STRATA-HANDOFF Â§6.0 #14).
+  conversation â€” per-conversation isolation is mandatory).
   Instances are created lazily on the first turn and dropped by /v1/strata/reset.
 - Conversations persist to ``state_dir`` (default ./harness_state, one atomic
   JSON per conversation using the same store serialization as the benchmark's
@@ -73,7 +73,7 @@ from backend.providers import (
     providers_path,
     save_registry,
 )
-from cortex.config import HiveConfig
+from cortex.config import StrataConfig
 from cortex.strata import Strata
 from experiments.model_probe import _list_models, probe_model
 from harness.models import LlamaServerManager
@@ -931,7 +931,7 @@ class _State:
         if path is not None and path.exists():
             path.unlink()
 
-    def hive_for(
+    def strata_for(
         self, conversation_id: str, config_overrides: dict | None,
         with_backend: bool = True, engine: Optional[str] = None,
     ) -> Strata:
@@ -954,7 +954,7 @@ class _State:
                 self._last_access[conversation_id] = time.monotonic()
                 return strata
 
-            def build(cfg: HiveConfig, backend: object | None) -> Strata:
+            def build(cfg: StrataConfig, backend: object | None) -> Strata:
                 logger = self._loggers.get(conversation_id)
                 if logger is None:
                     logger = EventLogger(log_dir=self.log_dir)
@@ -973,7 +973,7 @@ class _State:
             if path is not None and path.exists():
                 try:
                     data = json.loads(path.read_text(encoding="utf-8"))
-                    strata = build(HiveConfig.from_dict(data["config"]),
+                    strata = build(StrataConfig.from_dict(data["config"]),
                                  self.backend_factory(None)
                                  if data.get("with_backend") else None)
                     strata.store = ContextStore.from_dict(
@@ -987,10 +987,10 @@ class _State:
                     print(f"harness: restoring {conversation_id} failed ({exc}); "
                           "starting fresh", file=sys.stderr)
 
-            config = HiveConfig(confidence_mode="off")
+            config = StrataConfig(confidence_mode="off")
             if config_overrides:
                 merged = {**config.to_dict(), **config_overrides}
-                config = HiveConfig.from_dict(merged)
+                config = StrataConfig.from_dict(merged)
             if not config.sampling and self.engines.engines:
                 # Engine sampling defaults apply when the caller did not
                 # specify sampling (per-call / per-config overrides win).
@@ -1063,7 +1063,7 @@ class TurnRequest(BaseModel):
     model: Optional[str] = None  # override the provider's model for this turn's strata
     provider: Optional[str] = None  # per-conversation inference target (multi-model)
     engine: Optional[str] = None  # engine profile name (sampling defaults apply)
-    config: Optional[dict] = None  # HiveConfig overrides (applied on creation)
+    config: Optional[dict] = None  # StrataConfig overrides (applied on creation)
 
 
 class ResetRequest(BaseModel):
@@ -1642,11 +1642,11 @@ def create_app(
 
     # ------------------------------------------------------------------
     @app.post("/v1/strata/turn")
-    def hive_turn(req: TurnRequest):
+    def strata_turn(req: TurnRequest):
         query = (req.query or "").strip()
         if not query:
             raise HTTPException(422, "query must not be empty")
-        strata = st.hive_for(req.conversation_id, req.config, engine=req.engine)
+        strata = st.strata_for(req.conversation_id, req.config, engine=req.engine)
         # Per-conversation inference target: provider and/or model override
         # swaps the conversation's backend (multi-model: pick any loaded one).
         current_provider = st._conv_provider.get(req.conversation_id)
@@ -1681,7 +1681,7 @@ def create_app(
         }
 
     @app.get("/v1/strata/inspect/{conversation_id}")
-    def hive_inspect(conversation_id: str):
+    def strata_inspect(conversation_id: str):
         """Last turn's full curation detail for the prompt inspector."""
         with st.global_lock:
             strata = st.hives.get(conversation_id)
@@ -1692,7 +1692,7 @@ def create_app(
         return strata.inspect_turn(strata._last_turn_result)
 
     @app.post("/v1/strata/reset")
-    def hive_reset(req: ResetRequest):
+    def strata_reset(req: ResetRequest):
         st.drop(req.conversation_id)
         return {"ok": True}
 
@@ -1700,11 +1700,11 @@ def create_app(
     # Curate / observe (Seam A, dsh-strata flow): the caller's own shell
     # generates â€” the sidecar only assembles context and ingests replies.
     @app.post("/v1/strata/curate")
-    def hive_curate(req: CurateRequest):
+    def strata_curate(req: CurateRequest):
         query = (req.query or "").strip()
         if not query:
             raise HTTPException(422, "query must not be empty")
-        strata = st.hive_for(req.conversation_id, req.config, with_backend=False,
+        strata = st.strata_for(req.conversation_id, req.config, with_backend=False,
                            engine=req.engine)
         with st.lock_for(req.conversation_id):
             result = strata.process_turn(query, conversation_id=req.conversation_id)
@@ -1724,11 +1724,11 @@ def create_app(
         }
 
     @app.post("/v1/strata/observe")
-    def hive_observe(req: ObserveRequest):
+    def strata_observe(req: ObserveRequest):
         # lazily create: external integrators may observe before ever calling
         # curate (e.g. feeding back a reply for a session the studio has
         # never seen); the conversation materializes here.
-        strata = st.hive_for(req.conversation_id, None, with_backend=False)
+        strata = st.strata_for(req.conversation_id, None, with_backend=False)
         reply = (req.reply or "").strip()
         stored = False
         if reply and not (
@@ -1747,7 +1747,7 @@ def create_app(
     # curate -> stream the provider's SSE -> observe the reply back into
     # the store. Events: {type: meta|delta|done|error}.
     @app.post("/v1/strata/stream")
-    async def hive_stream(req: StreamTurnRequest):
+    async def strata_stream(req: StreamTurnRequest):
         query = (req.query or "").strip()
         if not query:
             raise HTTPException(422, "query must not be empty")
@@ -1759,7 +1759,7 @@ def create_app(
         base_url = provider.base_url.rstrip("/")
         headers = {"Authorization": f"Bearer {provider.api_key or 'lm-studio'}",
                    **provider.extra_headers}
-        strata = st.hive_for(req.conversation_id, req.config, with_backend=False)
+        strata = st.strata_for(req.conversation_id, req.config, with_backend=False)
         st.begin(req.conversation_id)
         with st.lock_for(req.conversation_id):
             result = strata.process_turn(query, conversation_id=req.conversation_id)
@@ -1840,14 +1840,14 @@ def create_app(
         return StreamingResponse(sse(), media_type="text/event-stream")
 
     @app.get("/v1/strata/defaults")
-    def hive_defaults():
-        """HiveConfig defaults â€” the source for the UI tuning form. Overrides
+    def strata_defaults():
+        """StrataConfig defaults â€” the source for the UI tuning form. Overrides
         ride each turn request's `config` and apply when a conversation is
         created (reset to re-tune)."""
-        return HiveConfig().to_dict()
+        return StrataConfig().to_dict()
 
     @app.get("/v1/strata/state")
-    def hive_state(conversation_id: Optional[str] = Query(default=None)):
+    def strata_state(conversation_id: Optional[str] = Query(default=None)):
         def snapshot(h: Strata) -> dict:
             return {
                 "turn": h.turn,
@@ -1861,7 +1861,7 @@ def create_app(
             if strata is None and st.state_dir is not None \
                     and st._conv_path(conversation_id).exists():
                 # lazy-restore a persisted conversation so state survives restarts
-                strata = st.hive_for(conversation_id, None)
+                strata = st.strata_for(conversation_id, None)
             if strata is None:
                 raise HTTPException(404, f"no such conversation: {conversation_id}")
             return {**snapshot(strata), "conversation_id": conversation_id}
@@ -1954,7 +1954,7 @@ def create_app(
         return (
             f"[strata-mock] model={payload.get('model', '?')} "
             f"system={len(system_txt)}ch user={len(user_txt)}ch "
-            f"hive_context={'yes' if curated else 'no'} "
+            f"strata_context={'yes' if curated else 'no'} "
             f"context_head={head!r}"
         )
 
@@ -2124,7 +2124,7 @@ def create_app(
         base_url = provider.base_url.rstrip("/")
         headers = {"Authorization": f"Bearer {provider.api_key or 'lm-studio'}",
                    **provider.extra_headers}
-        strata = st.hive_for(cid, payload.get("config"), with_backend=False)
+        strata = st.strata_for(cid, payload.get("config"), with_backend=False)
         with st.lock_for(cid):
             result = strata.process_turn(query, conversation_id=cid)
             st.save_conversation(cid, strata)
@@ -2194,7 +2194,7 @@ def create_app(
                     yield "data: " + json.dumps(chunk) + "\n\n"
             except Exception as exc:  # noqa: BLE001 - surfaced as an SSE error event
                 yield "data: " + json.dumps({
-                    "error": {"message": str(exc), "type": "hive_upstream_error"},
+                    "error": {"message": str(exc), "type": "strata_upstream_error"},
                 }) + "\n\n"
             observe("".join(parts))
 
@@ -3182,7 +3182,7 @@ def create_app(
 
 
     @app.get("/v1/strata/mode")
-    def hive_mode_get():
+    def strata_mode_get():
         if MODE_FILE.exists():
             try:
                 data = json.loads(MODE_FILE.read_text(encoding="utf-8-sig"))
@@ -3193,7 +3193,7 @@ def create_app(
         return {"afk": False, "_file": str(MODE_FILE)}
 
     @app.post("/v1/strata/mode")
-    async def hive_mode_set(req: Request):
+    async def strata_mode_set(req: Request):
         body = await req.json()
         afk = bool(body.get("afk"))
         note = str(body.get("note", ""))[:200]

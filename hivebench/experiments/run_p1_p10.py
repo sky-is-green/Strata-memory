@@ -30,7 +30,7 @@ from backend.cache_manager import KVCacheManager
 from backend.lmstudio import LMStudioBackend
 from backend.sampling import parse_sampling
 from cortex.efficiency import EfficiencyScorer
-from cortex.strata import Hive
+from cortex.strata import Strata
 from cortex.routing import DroneRouter, EscalationHandler
 from focal.assembly import ContextAssembler
 from focal.budget import AdaptiveBudget
@@ -212,7 +212,7 @@ class PredictionSuite:
         answer is compared — not one conversation, not every 3rd turn.
 
         The strata store grows like the live strata (query chunk + non-hedge reply
-        chunk per turn, mirroring ``Hive.process_turn``), so the selection sees
+        chunk per turn, mirroring ``Strata.process_turn``), so the selection sees
         the same history a live run would. The FIFO context is the last-4k-token
         window of the same history.
 
@@ -285,7 +285,7 @@ class PredictionSuite:
                 # reply chunk unless it is a hedge
                 reply = (conv_answers.get(q) or "").strip() or ""
                 store.add_chunk(turn, q)
-                if reply and not Hive._is_hedge_reply(reply):
+                if reply and not Strata._is_hedge_reply(reply):
                     store.add_chunk(turn, reply)
 
         if compared == 0:
@@ -450,7 +450,7 @@ class PredictionSuite:
                     expected += len(facts)
                 store.add_chunk(turn, q)
                 reply = (conv_answers.get(q) or "").strip() or ""
-                if reply and not Hive._is_hedge_reply(reply):
+                if reply and not Strata._is_hedge_reply(reply):
                     store.add_chunk(turn, reply)
                 prior_fixture += " " + q
         return found / expected if expected else 0.0
@@ -749,7 +749,7 @@ class PredictionSuite:
                     store.add_chunk(turn, q)
                     store.add_chunk(turn, answer or "")
                     continue
-                # gate + assemble (mirrors Hive.process_turn's comb wiring)
+                # gate + assemble (mirrors Strata.process_turn's comb wiring)
                 assembled = ContextAssembler().assemble(
                     query=q, current_turn=turn, store=store,
                     router=DroneRouter(), ultra_small=self.ultra,
@@ -760,11 +760,11 @@ class PredictionSuite:
                 )
                 comb_candidates = []
                 if comb is not None and len(comb) > 0:
-                    from cortex.config import HiveConfig
+                    from cortex.config import StrataConfig
 
-                    gate_fires = assembled.top_raw_score < HiveConfig().comb_gate_threshold
+                    gate_fires = assembled.top_raw_score < StrataConfig().comb_gate_threshold
                     if not gate_fires and assembled.top_chunk_id is not None:
-                        # query-echo gate (mirrors Hive._comb_gate_fires): a
+                        # query-echo gate (mirrors Strata._comb_gate_fires): a
                         # template-sibling query chunk scores ~1.0 but carries
                         # no facts — measured to keep the gate closed on every
                         # return turn after the first
@@ -819,7 +819,7 @@ class PredictionSuite:
                     n_non_return += 1
                     non_return_recall += hit
                 store.add_chunk(turn, q)
-                if answer and not Hive._is_hedge_reply(answer):
+                if answer and not Strata._is_hedge_reply(answer):
                     store.add_chunk(turn, answer)
                 if comb is not None:
                     archived_total += store.evict_stale(
@@ -904,7 +904,7 @@ class PredictionSuite:
                 if not facts:
                     store.add_chunk(turn, q)
                     reply = (conv_answers.get(q) or "").strip() or ""
-                    if reply and not Hive._is_hedge_reply(reply):
+                    if reply and not Strata._is_hedge_reply(reply):
                         store.add_chunk(turn, reply)
                     continue
                 if turns_since_switch <= 3:
@@ -920,7 +920,7 @@ class PredictionSuite:
                     expected += len(facts)
                 store.add_chunk(turn, q)
                 reply = (conv_answers.get(q) or "").strip() or ""
-                if reply and not Hive._is_hedge_reply(reply):
+                if reply and not Strata._is_hedge_reply(reply):
                     store.add_chunk(turn, reply)
         return found / expected if expected else 0.0
 

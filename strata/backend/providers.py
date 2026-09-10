@@ -27,6 +27,7 @@ from __future__ import annotations
 import copy
 import json
 import os
+import re
 from dataclasses import asdict, dataclass, field
 from pathlib import Path
 from typing import Optional
@@ -73,6 +74,50 @@ class Provider:
             extra_headers={str(k): str(v) for k, v in (headers or {}).items()},
         )
 
+AUTO_PREFIX = "auto://"
+
+
+def _find_llama_server_port() -> Optional[str]:
+    """Scan /proc for a running llama-server and return its --port value."""
+    port_re = re.compile(r"^--port\s*=(\d+)$")
+    for pid in os.listdir("/proc"):
+        if not pid.isdigit():
+            continue
+        try:
+            with open(f"/proc/{pid}/cmdline", "rb") as f:
+                argv = f.read().split(b"\x00")
+        except OSError:
+            continue
+        names = [os.path.basename(a.decode(errors="replace")) for a in argv if a]
+        if not any(n.startswith("llama-server") for n in names):
+            continue
+        for i, arg in enumerate(argv):
+            m = port_re.match(arg.decode(errors="replace"))
+            if m:
+                return m.group(1)
+            if arg == b"--port" and i + 1 < len(argv):
+                return argv[i + 1].decode(errors="replace")
+    return None
+
+
+def resolve_auto_base_url(base_url: str) -> str:
+    """Resolve an ``auto://`` base URL to a live local endpoint.
+
+    ``auto://studio`` points at whatever llama-server is running right now
+    (Studio restarts it on a dynamic port), so the sidecar survives model
+    swaps and Studio restarts without editing providers.local.json."""
+    if not base_url.startswith(AUTO_PREFIX):
+        return base_url
+    host = base_url[len(AUTO_PREFIX):].strip().lower() or "studio"
+    if host != "studio":
+        raise LookupError(f"unknown auto target '{host}' (known: studio)")
+    port = _find_llama_server_port()
+    if not port:
+        raise LookupError(
+            "auto://studio could not find a running llama-server process; "
+            "start the model in Studio first")
+    return f"http://127.0.0.1:{port}"
+
 
 @dataclass
 class ProviderRegistry:
@@ -90,12 +135,17 @@ class ProviderRegistry:
             )
         wanted = (name or self.default or "").strip().lower()
         if not wanted:
-            return self.providers[0]
-        for p in self.providers:
-            if p.name.lower() == wanted:
-                return p
-        known = ", ".join(p.name for p in self.providers)
-        raise LookupError(f"unknown provider '{name}' (known: {known})")
+            p = self.providers[0]
+        else:
+            for p in self.providers:
+                if p.name.lower() == wanted:
+                    break
+            else:
+                known = ", ".join(p.name for p in self.providers)
+                raise LookupError(f"unknown provider '{name}' (known: {known})")
+        resolved = copy.deepcopy(p)
+        resolved.base_url = resolve_auto_base_url(resolved.base_url)
+        return resolved
 
     def redacted(self) -> list[dict]:
         return [redact_provider(p.to_dict()) for p in self.providers]

@@ -815,7 +815,7 @@ def test_server_page_serves(client):
     c, _app = client
     page = c.get("/server")
     assert page.status_code == 200
-    assert "Hive Studio console" in page.text
+    assert "Strata Studio console" in page.text
     assert "/v1/server/status" in page.text
     # the chat pane streams through the strata
     assert "/v1/strata/stream" in page.text

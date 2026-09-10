@@ -42,7 +42,7 @@ from sieve.ultra_small import UltraSmallDrone
 from sieve.scores import ChunkScore
 
 DEFAULT_PINNED_PREFIX = (
-    "You are an assistant operating in the Hive Memory system. "
+    "You are an assistant operating in the Strata Memory system. "
     "Answer using only the provided context and conversation history."
 )
 
@@ -211,7 +211,7 @@ class EndToEndRunner:
 
 
 def main(argv: list[str] | None = None) -> int:
-    parser = argparse.ArgumentParser(description="Hive end-to-end runner")
+    parser = argparse.ArgumentParser(description="Strata end-to-end runner")
     parser.add_argument("--conversation", default="hivebench/tests/fixtures/generated/short_001.json")
     parser.add_argument("--max-turns", type=int, default=None)
     parser.add_argument("--base-url", default="http://localhost:1234")

@@ -1,6 +1,6 @@
 """Unified data-generation workflow.
 
-Drives the full Hive pipeline over a set of conversations and writes a
+Drives the full Strata pipeline over a set of conversations and writes a
 self-contained run directory with:
 
   - NDJSON event logs (correlation-tagged, redacted, rotated)
@@ -54,9 +54,9 @@ from backend.providers import (
     load_registry,
 )
 from cortex.baselines.runner import load_conversations
-from cortex.config import HiveConfig
+from cortex.config import StrataConfig
 from cortex.e2e import FakeUltraSmall, MockTransport
-from cortex.strata import Hive
+from cortex.strata import Strata
 from cortex.routing import DroneRouter
 from experiments.dashboard import KeepAwake, TermDashboard
 from logs.event_logger import EventLogger
@@ -68,7 +68,7 @@ from sieve.medium import MediumDrone
 from sieve.ultra_small import UltraSmallDrone
 
 DEFAULT_PINNED_PREFIX = (
-    "You are an assistant operating in the Hive Memory system. "
+    "You are an assistant operating in the Strata Memory system. "
     "Answer using the provided context and conversation history whenever they "
     "contain the needed information. If the context is insufficient, you may "
     "draw on your general knowledge, but clearly mark any such part."
@@ -293,7 +293,7 @@ def _run_conversations(strata, conversations, max_turns, conversation_id=None,
         # Per-conversation store isolation: reset before every conversation
         # EXCEPT a mid-conversation resume, whose store was restored from the
         # checkpoint and must keep the partial conversation's chunks. Without
-        # this reset, one Hive/store across all conversations lets chunks from
+        # this reset, one Strata/store across all conversations lets chunks from
         # earlier conversations crowd out the current one's relevant context.
         if not (resume is not None and ci == start_conv and current_record is not None):
             strata.reset_conversation()
@@ -490,7 +490,7 @@ def _read_baseline_tps(run_dir: Path) -> float | None:
 def _compute_post_run_pes(records, db, baseline_tps: float | None = None):
     """Post-run Pipeline Efficiency Score from ground-truth + measured metrics.
 
-    The per-turn in-process PES (``Hive.process_turn``) only sees latency and
+    The per-turn in-process PES (``Strata.process_turn``) only sees latency and
     context utilization, so in live runs it floors near zero (the paper's
     LatencyHealth is ms-calibrated and live generation is seconds). This computes
     the paper's real PES after the run, when queen retrieval/routing metrics
@@ -560,7 +560,7 @@ def _compute_post_run_pes(records, db, baseline_tps: float | None = None):
 
 
 def main(argv: list[str] | None = None) -> int:
-    parser = argparse.ArgumentParser(description="Hive data-generation workflow")
+    parser = argparse.ArgumentParser(description="Strata data-generation workflow")
     parser.add_argument("--live", action="store_true", help="use real LM Studio + all-MiniLM")
     parser.add_argument("--mock", action="store_true", help="offline (fake drone + mock backend)")
     parser.add_argument("--conversations", default="hivebench/tests/fixtures/generated")
@@ -749,8 +749,8 @@ def main(argv: list[str] | None = None) -> int:
         print(f"run directory {run_dir} is already in use by a live process (run.lock)")
         return 3
 
-    config = (HiveConfig.from_dict(resume_ckpt["config"]) if resume_ckpt
-              else HiveConfig(max_tokens=args.max_tokens))
+    config = (StrataConfig.from_dict(resume_ckpt["config"]) if resume_ckpt
+              else StrataConfig(max_tokens=args.max_tokens))
     if args.sampling:
         from backend.sampling import parse_sampling
 
@@ -772,7 +772,7 @@ def main(argv: list[str] | None = None) -> int:
         config.comb_top_k = args.comb_top_k
         config.comb_max_records = args.comb_max_records
         Path(config.comb_dir).mkdir(parents=True, exist_ok=True)
-    strata = Hive(
+    strata = Strata(
         config=config,
         ultra=ultra,
         medium=MediumDrone(score_pair_fn=lambda q, c: 0.5),

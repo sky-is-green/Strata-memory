@@ -31,7 +31,7 @@ class GroundTruthDB:
                 actually_relevant INTEGER NOT NULL,
                 score REAL
             );
-            CREATE TABLE IF NOT EXISTS hive_decisions (
+            CREATE TABLE IF NOT EXISTS strata_decisions (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 turn INTEGER NOT NULL,
                 decision_type TEXT NOT NULL,
@@ -72,7 +72,7 @@ class GroundTruthDB:
         self, turn: int, decision_type: str, params: dict | None = None, outcome: str = ""
     ) -> None:
         self._conn.execute(
-            "INSERT INTO hive_decisions(turn, decision_type, params, outcome) VALUES (?,?,?,?)",
+            "INSERT INTO strata_decisions(turn, decision_type, params, outcome) VALUES (?,?,?,?)",
             (turn, decision_type, json.dumps(params) if params else None, outcome),
         )
         self._conn.commit()
@@ -140,7 +140,7 @@ class GroundTruthDB:
     def routing_accuracy(self, window: int = 100) -> float:
         """% of routing decisions recorded as correct."""
         rows = self._conn.execute(
-            "SELECT outcome FROM (SELECT * FROM hive_decisions "
+            "SELECT outcome FROM (SELECT * FROM strata_decisions "
             "WHERE decision_type='route' ORDER BY id DESC LIMIT ?)",
             (window,),
         ).fetchall()

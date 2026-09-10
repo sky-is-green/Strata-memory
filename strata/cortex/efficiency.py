@@ -1,6 +1,5 @@
 """Pipeline Efficiency Score (PES) — composite 0-100 pipeline health metric.
 
-See HIVE-HANDOFF.md Appendix B for the full specification.
 
 PES = 0.30*RetrievalPrecision
     + 0.20*RoutingAccuracy

@@ -113,7 +113,7 @@ def _load_live_pairs(run_dir: Path, max_pairs: int) -> list[dict]:
     fixture_convs = _load_fixture_conversations()
     answers = _fixture_answer_map(fixture_convs)
 
-    from cortex.strata import Hive
+    from cortex.strata import Strata
 
     pairs: list[dict] = []
     for conv in convs:
@@ -133,7 +133,7 @@ def _load_live_pairs(run_dir: Path, max_pairs: int) -> list[dict]:
                         continue
                     relevant = bool(facts & _content_terms(chunk))
                     pairs.append({"query": q, "chunk": chunk, "relevant": relevant})
-            if r and not Hive._is_hedge_reply(r):
+            if r and not Strata._is_hedge_reply(r):
                 stored.append(r)
             if len(pairs) >= max_pairs:
                 return pairs

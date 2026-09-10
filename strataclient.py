@@ -9,7 +9,7 @@ def turn(conv, content):
         {"role": "system", "content": SYS},
         {"role": "user", "content": content}]}).encode()
     r = urllib.request.Request(f"{BASE}/v1/openai/chat/completions", data=body,
-        headers={"Content-Type": "application/json", "X-Hive-Conversation": conv})
+        headers={"Content-Type": "application/json", "X-Strata-Conversation": conv})
     t0 = time.time()
     with urllib.request.urlopen(r, timeout=600) as resp:
         d = json.load(resp)

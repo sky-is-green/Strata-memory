@@ -1,4 +1,4 @@
-"""Lead-anchored refusal/hedge detection (shared by Hive and the S6
+"""Lead-anchored refusal/hedge detection (shared by Strata and the S6
 Confirmation Gate).
 
 Live runs showed ~50% of replies were "no information regarding X"

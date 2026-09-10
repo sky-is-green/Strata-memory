@@ -11,7 +11,7 @@ import hashlib, json, os, sqlite3, sys
 from pathlib import Path
 
 sys.path.insert(0, ".")
-from strata.cortex.config import HiveConfig
+from strata.cortex.config import StrataConfig
 from strata.retention.store import ContextStore
 
 DB = "/home/penis/.unsloth/studio/studio.db"
@@ -53,7 +53,7 @@ def main():
         store.add_chunk(i, content, chunk_id=cid)
         n += 1
 
-    cfg = HiveConfig(confidence_mode="off")
+    cfg = StrataConfig(confidence_mode="off")
     digest = hashlib.md5(conv_name.encode()).hexdigest()[:16]
     path = STATE_DIR / f"conv-{digest}.json"
     payload = {

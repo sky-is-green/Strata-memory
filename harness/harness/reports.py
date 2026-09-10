@@ -498,8 +498,8 @@ def render_server_page() -> str:
 <div class="note">Applied when a conversation is created — hit
 "New conversation" in the chat pane after changing.</div>
 <div class="row">
-<label class="inline" title="How: HiveConfig.max_context (8192 default) caps assembly.py focal budget vs drone budget (1-6k). Does: Token ceiling for curated prompt. Changing: Up → more chunks fit but higher token_count/latency; down → truncates even high-relevance facts.">max_context  <input id="h-maxctx" type="number" size="6"></label>
-<label class="inline" title="How: HiveConfig.max_tokens (None=backend default) → sampling max_tokens via app:1379/stream. Does: Caps reply length. Changing: Up longer answers; down ≤256 on reasoning models → empty_reply_reasoning_starved.">max_tokens  <input id="h-maxtok" type="number" size="5" placeholder="4096 ceiling"></label>
+<label class="inline" title="How: StrataConfig.max_context (8192 default) caps assembly.py focal budget vs drone budget (1-6k). Does: Token ceiling for curated prompt. Changing: Up → more chunks fit but higher token_count/latency; down → truncates even high-relevance facts.">max_context  <input id="h-maxctx" type="number" size="6"></label>
+<label class="inline" title="How: StrataConfig.max_tokens (None=backend default) → sampling max_tokens via app:1379/stream. Does: Caps reply length. Changing: Up longer answers; down ≤256 on reasoning models → empty_reply_reasoning_starved.">max_tokens  <input id="h-maxtok" type="number" size="5" placeholder="4096 ceiling"></label>
 </div>
 <div class="row">
 <label class="inline" title="How: stale_threshold 20 → decay.py age>20 *0.5 and archive to comb. Does: Stale penalty + archiving gate. Changing: Up zombies linger; down faster forgetting, comb sooner, cleaner but lose mid-horizon.">stale wall  <input id="h-stale" type="number" size="3"></label>
@@ -2644,13 +2644,13 @@ function engineLoadFromFit() {{
 }})();
 
 /* ----------------------------- strata tab ------------------------------ */
-const HIVE_NUMERIC = [['max_context', 'h-maxctx'], ['max_tokens', 'h-maxtok'],
+const STRATA_NUMERIC = [['max_context', 'h-maxctx'], ['max_tokens', 'h-maxtok'],
   ['stale_threshold', 'h-stale'], ['dedup_threshold', 'h-dedup'],
   ['drift_threshold', 'h-drift'], ['remembrance_threshold', 'h-remem'],
   ['vocab_boost', 'h-vocab']];
 
 function hiveToForm(cfg) {{
-  for (const [key, id] of HIVE_NUMERIC)
+  for (const [key, id] of STRATA_NUMERIC)
     document.getElementById(id).value =
       (cfg[key] === undefined || cfg[key] === null) ? '' : cfg[key];
   document.getElementById('h-conf').value = cfg.confidence_mode || 'off';
@@ -2669,7 +2669,7 @@ function collectHiveOverrides() {{
   const defaults = window.__hiveDefaults || {{}};
   const changed = (key, value) => defaults[key] === undefined
     || JSON.stringify(defaults[key]) !== JSON.stringify(value);
-  for (const [key, id] of HIVE_NUMERIC) {{
+  for (const [key, id] of STRATA_NUMERIC) {{
     const v = num(id);
     if (v !== null && changed(key, v)) out[key] = v;
   }}

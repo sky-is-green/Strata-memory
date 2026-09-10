@@ -1,4 +1,4 @@
-"""Hive test runner, organized by what each group measures.
+"""Strata test runner, organized by what each group measures.
 
 Groups
 ------
@@ -126,7 +126,7 @@ def run_group(group: str):
 
 
 def main(argv: list[str] | None = None) -> int:
-    parser = argparse.ArgumentParser(description="Hive test runner (grouped)")
+    parser = argparse.ArgumentParser(description="Strata test runner (grouped)")
     parser.add_argument(
         "--group",
         choices=["speed", "intelligence", "skills", "maximum"],
@@ -137,7 +137,7 @@ def main(argv: list[str] | None = None) -> int:
 
     groups = ["speed", "intelligence", "skills"] if args.group == "maximum" else [args.group]
 
-    print("Hive test groups (estimated durations):")
+    print("Strata test groups (estimated durations):")
     for g in ["speed", "intelligence", "skills", "maximum"]:
         marker = " <- running" if g in groups else ""
         print(f"  {g:<14} ~{ESTIMATES[g]}s{marker}")
@@ -151,7 +151,7 @@ def main(argv: list[str] | None = None) -> int:
         total += dt
         results[g] = (status, dt)
 
-    print("\n=== Hive Test Suite Summary ===")
+    print("\n=== Strata Test Suite Summary ===")
     ok = True
     for g in ["speed", "intelligence", "skills"]:
         if g not in results:

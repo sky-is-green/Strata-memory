@@ -1,6 +1,6 @@
 """S6 — Confirmation Gate & Imprint Grading.
 
-Goal (plan §4.8 / HIVE-HANDOFF.md): make *ingestion a confirmed act* rather
+Goal(plan §4.8): make *ingestion a confirmed act* rather
 than an automatic one. Every generation is graded on how close it is to a
 *genetic perfection imprint* — the known-correct facts for the conversation —
 before it is stored. A generation that is not a close "copy" of the imprint is

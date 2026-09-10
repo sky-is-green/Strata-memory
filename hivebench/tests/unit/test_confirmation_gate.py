@@ -2,13 +2,13 @@
 
 Covers the grading math, the accept/reject/flag bands, the imprint providers
 (fixture + digest), rule-parity (the gate must catch everything the rule-based
-hedge filter catches), and the Hive wiring with the mechanism-attribution
+hedge filter catches), and the Strata wiring with the mechanism-attribution
 condition (gate disabled == rule-based behavior).
 """
 
 import pytest
 
-from cortex.config import HiveConfig
+from cortex.config import StrataConfig
 from cortex.confirmation_gate import (
     ConfirmationGate,
     DigestImprint,
@@ -16,7 +16,7 @@ from cortex.confirmation_gate import (
     content_terms,
     fact_terms,
 )
-from cortex.strata import Hive
+from cortex.strata import Strata
 from cortex.e2e import FakeUltraSmall
 
 FIXTURE_ANSWER_MAP = {
@@ -206,19 +206,19 @@ def test_gate_summary_counts():
 
 
 # ---------------------------------------------------------------------------
-# Hive wiring
+# Strata wiring
 
 
 def test_gate_disabled_by_default_uses_rule_filter():
-    strata = Hive(HiveConfig(), ultra=FakeUltraSmall())
+    strata = Strata(StrataConfig(), ultra=FakeUltraSmall())
     assert strata.gate is None
     assert strata.config.gate_enabled is False
 
 
 def test_gate_wired_when_enabled_and_hedges_not_stored():
-    config = HiveConfig(gate_enabled=True)
+    config = StrataConfig(gate_enabled=True)
     imp = FixtureImprint(FIXTURE_ANSWER_MAP)
-    strata = Hive(
+    strata = Strata(
         config,
         ultra=FakeUltraSmall(),
         backend=_StubBackend({
@@ -240,7 +240,7 @@ def test_gate_wired_when_enabled_and_hedges_not_stored():
     assert strata.gate_stats["decisions"][-1]["decision"] == "accept"
 
     # Turn 2: a refusal reply -> reject -> NOT stored (query chunk still is).
-    hive2 = Hive(
+    hive2 = Strata(
         config, ultra=FakeUltraSmall(),
         backend=_StubBackend({
             "What is the rate limit for the API?": (
@@ -259,8 +259,8 @@ def test_gate_wired_when_enabled_and_hedges_not_stored():
 def test_mechanism_attribution_gate_disabled_matches_rule():
     """With the gate disabled, the rule-based hedge filter governs exactly
     as before (the mechanism-attribution condition)."""
-    config = HiveConfig(filter_hedge_replies=True)
-    strata = Hive(
+    config = StrataConfig(filter_hedge_replies=True)
+    strata = Strata(
         config, ultra=FakeUltraSmall(),
         backend=_StubBackend({
             "q": "I don't have access to that information.",
@@ -274,8 +274,8 @@ def test_mechanism_attribution_gate_disabled_matches_rule():
 def test_digest_imprint_wiring_accumulates_accepted_facts():
     """Live mode: the digest imprint grows from accepted replies, so a later
     ask about an established fact is graded against it."""
-    config = HiveConfig(gate_enabled=True)
-    strata = Hive(
+    config = StrataConfig(gate_enabled=True)
+    strata = Strata(
         config, ultra=FakeUltraSmall(),
         backend=_StubBackend({
             "Tell me about the new feature": (

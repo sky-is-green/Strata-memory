@@ -132,7 +132,7 @@ def test_run_lock_live_foreign_pid_refused(tmp_path, monkeypatch):
 def test_per_conversation_store_isolation(tmp_path):
     """Chunks from one conversation must not leak into another.
 
-    A benchmark run over many conversations shares one Hive; without a
+    A benchmark run over many conversations shares one Strata; without a
     per-conversation reset, later conversations retrieve mostly *other*
     conversations' chunks, collapsing P2 precision. This regression test runs
     two conversations and asserts the second one's context store contains no
@@ -140,9 +140,9 @@ def test_per_conversation_store_isolation(tmp_path):
     """
     import os
 
-    from cortex.config import HiveConfig
+    from cortex.config import StrataConfig
     from cortex.e2e import FakeUltraSmall, MockTransport
-    from cortex.strata import Hive
+    from cortex.strata import Strata
     from backend.lmstudio import LMStudioBackend
     from cortex.baselines.runner import load_conversations
 
@@ -151,8 +151,8 @@ def test_per_conversation_store_isolation(tmp_path):
     first = next(c for c in convs if c["conversation_id"] == "edge_001")
     second = next(c for c in convs if c["conversation_id"] == "edge_002")
 
-    config = HiveConfig(confidence_mode="off", sanitize_context=False)
-    strata = Hive(
+    config = StrataConfig(confidence_mode="off", sanitize_context=False)
+    strata = Strata(
         config=config,
         ultra=FakeUltraSmall(),
         medium=__import__("sieve.medium", fromlist=["MediumDrone"]).MediumDrone(

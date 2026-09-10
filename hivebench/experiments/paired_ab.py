@@ -43,7 +43,7 @@ from backend.sampling import parse_sampling
 from cortex.baselines.runner import FIFO_WINDOW_TOKENS, load_conversations
 from cortex.baselines.metrics import estimate_tokens
 from cortex.e2e import FakeUltraSmall, MockTransport
-from cortex.strata import Hive
+from cortex.strata import Strata
 from cortex.routing import DroneRouter, EscalationHandler
 from focal.assembly import ContextAssembler
 from focal.budget import AdaptiveBudget
@@ -250,7 +250,7 @@ def run_paired(conversations, backend, ultra, medium, sampling=None,
                 # query chunk always, the reply chunk (strata arm's live reply, or
                 # the fixture answer for skipped turns) unless it is a hedge.
                 store.add_chunk(turn, q)
-                if stored_reply and not Hive._is_hedge_reply(stored_reply):
+                if stored_reply and not Strata._is_hedge_reply(stored_reply):
                     store.add_chunk(turn, stored_reply)
                 prior_parts.append(td.get("content", "") or "")
                 done_turns += 1

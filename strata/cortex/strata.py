@@ -1,8 +1,8 @@
-"""Unified Hive orchestrator.
+"""Unified Strata orchestrator.
 
 Wires all components (store, drones, router, assembler, health monitor, graceful
 degradation, KV-cache, logger) into a single ``process_turn()`` entry point that
-mirrors the plan's ``Hive`` used by shadow mode / A-B / rollback. It:
+mirrors the plan's ``Strata`` used by shadow mode / A-B / rollback. It:
 
   - checks congestion and applies graceful degradation each turn,
   - assembles context (or falls back to FIFO at emergency level),
@@ -24,7 +24,7 @@ from typing import Optional
 from backend.cache_manager import KVCacheManager
 from cortex.baselines.metrics import estimate_tokens
 from cortex.baselines.runner import build_fifo_messages
-from cortex.config import HiveConfig
+from cortex.config import StrataConfig
 from cortex.degradation import GracefulDegradation
 from cortex.efficiency import EfficiencyScorer
 from cortex.health import PipelineHealthMonitor
@@ -56,12 +56,12 @@ class TurnResult:
     error: Optional[str] = None
 
 
-class Hive:
+class Strata:
     _WORD_RE = re.compile(r"[a-z0-9]{4,}")
 
     def __init__(
         self,
-        config: Optional[HiveConfig] = None,
+        config: Optional[StrataConfig] = None,
         ultra=None,
         medium=None,
         backend=None,
@@ -71,7 +71,7 @@ class Hive:
         router=None,
         confirmation_imprint=None,
     ) -> None:
-        self.config = config or HiveConfig()
+        self.config = config or StrataConfig()
         self.ultra = ultra or UltraSmallDrone(
             model_name=self.config.ultra_model,
             vocab_boost=self.config.vocab_boost,
@@ -83,7 +83,7 @@ class Hive:
             self.medium = MediumDrone(model_name=self.config.medium_model)
         else:
             # Medium drone is heavy and VRAM-contending; keep a lightweight
-            # placeholder until enabled via HiveConfig.enable_medium.
+            # placeholder until enabled via StrataConfig.enable_medium.
             self.medium = MediumDrone(score_pair_fn=lambda q, c: 0.5)
         self.backend = backend
         self.logger = logger
@@ -350,10 +350,10 @@ class Hive:
         chunk = self.store.chunks.get(cid)
         if chunk is None or not chunk.content or chunk.content == query:
             return False
-        cwords = {w for w in Hive._WORD_RE.findall(chunk.content.lower())}
+        cwords = {w for w in Strata._WORD_RE.findall(chunk.content.lower())}
         if not cwords:
             return False
-        qwords = {w for w in Hive._WORD_RE.findall(query.lower())}
+        qwords = {w for w in Strata._WORD_RE.findall(query.lower())}
         return len(cwords & qwords) / len(cwords) >= 0.8
 
     def inspect_turn(self, result: TurnResult) -> dict:

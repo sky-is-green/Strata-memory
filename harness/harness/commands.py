@@ -21,7 +21,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Callable, Optional
 
-from cortex.config import HiveConfig
+from cortex.config import StrataConfig
 
 
 @dataclass
@@ -218,13 +218,13 @@ class ConsoleCommands:
         lines = ["# Conversation transcript — "
                  f"{conversation_id}", "",
                  f"_exported {time.strftime('%Y-%m-%d %H:%M:%S')}_", ""]
-        hive_lines = _hive_markdown(self.st, conversation_id)
+        strata_lines = _hive_markdown(self.st, conversation_id)
         agent_lines = _agent_markdown(self.agent.session_root, conversation_id)
-        if hive_lines:
-            lines += ["## Strata conversation", ""] + hive_lines
+        if strata_lines:
+            lines += ["## Strata conversation", ""] + strata_lines
         if agent_lines:
             lines += ["## Agent (dsh) session", ""] + agent_lines
-        if not hive_lines and not agent_lines:
+        if not strata_lines and not agent_lines:
             return CommandResult("error",
                                  "nothing to save for this conversation yet")
         stamp = time.strftime("%Y%m%d_%H%M%S")

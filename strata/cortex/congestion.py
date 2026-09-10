@@ -1,6 +1,5 @@
 """Congestion detection for the strata pipeline.
 
-See HIVE-HANDOFF.md §4.2 (S0.3) and Appendix C for the full specification.
 
 Three signals, each with normal/warning/critical thresholds:
 

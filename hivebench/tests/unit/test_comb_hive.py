@@ -1,7 +1,7 @@
-"""Hive-level comb behavior: stale-out archiving, retrieve gate, stats, decay.
+"""Strata-level comb behavior: stale-out archiving, retrieve gate, stats, decay.
 
 Builds on test_comb_topic_return (assembly-level resurrection); these tests
-drive Hive.process_turn itself, so the gate, the stale-out trigger, and the
+drive Strata.process_turn itself, so the gate, the stale-out trigger, and the
 per-conversation stats are exercised through the real orchestrator path.
 """
 
@@ -9,8 +9,8 @@ import hashlib
 
 import numpy as np
 
-from cortex.config import HiveConfig
-from cortex.strata import Hive
+from cortex.config import StrataConfig
+from cortex.strata import Strata
 from sieve.scores import ChunkScore
 
 
@@ -38,13 +38,13 @@ class GateDrone:
 
 
 def _hive(tmp_path, hot="HOTTERM", **config_kwargs):
-    cfg = HiveConfig(
+    cfg = StrataConfig(
         comb_enabled=True,
         comb_dir=str(tmp_path / "comb"),
         comb_relevant_only=True,
         **config_kwargs,
     )
-    strata = Hive(config=cfg, ultra=GateDrone(hot))
+    strata = Strata(config=cfg, ultra=GateDrone(hot))
     return strata
 
 

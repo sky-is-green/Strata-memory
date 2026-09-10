@@ -35,7 +35,7 @@ class AssembledContext:
     drift_detected: bool
     selected_chunk_ids: list = field(default_factory=list)
     # Best raw drone score over the candidate pool (pre-decay); the comb gate
-    # (Hive) uses it to decide whether the active store answered well enough.
+    # (Strata) uses it to decide whether the active store answered well enough.
     top_raw_score: float = 0.0
     # Id of the highest-raw-score chunk — the gate also fires when this is a
     # *query echo* (a near-duplicate of the query itself, which carries no

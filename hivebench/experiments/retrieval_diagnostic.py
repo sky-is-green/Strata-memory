@@ -176,7 +176,7 @@ def compute_retrieval_vs_fixture(records: list[dict], conversations: list[dict])
     the strata's store). Facts the model never said are model-fidelity bound, not
     strata failures.
     """
-    from cortex.strata import Hive
+    from cortex.strata import Strata
 
     answer_map = _fixture_answer_map(conversations)
     # fixture text before each user query, per conversation (for first-mention)
@@ -199,14 +199,14 @@ def compute_retrieval_vs_fixture(records: list[dict], conversations: list[dict])
         conv_answers = answer_map.get(cid, {})
         conv_prior = prior_map.get(cid, {})
         # text the strata actually stored before each turn: query chunks always,
-        # reply chunks only when not filtered as hedges (mirrors Hive.process_turn)
+        # reply chunks only when not filtered as hedges (mirrors Strata.process_turn)
         prior_stored = ""
         for t in conv.get("turns", []):
             q = t.get("query", "")
             answer = conv_answers.get(q, "")
             reply = t.get("reply") or ""
             if not answer:
-                if reply and not Hive._is_hedge_reply(reply):
+                if reply and not Strata._is_hedge_reply(reply):
                     prior_stored += " " + reply
                 continue
             prior_text = conv_prior.get(q, "")
@@ -231,7 +231,7 @@ def compute_retrieval_vs_fixture(records: list[dict], conversations: list[dict])
                 "first_mention": not _is_retrievable(q, prior_text),
                 "precision": _turn_precision(q, assembled),
             })
-            if reply and not Hive._is_hedge_reply(reply):
+            if reply and not Strata._is_hedge_reply(reply):
                 prior_stored += " " + reply
 
     if not sampled:

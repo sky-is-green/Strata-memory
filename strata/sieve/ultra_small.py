@@ -5,7 +5,7 @@ the encoder probe showed L3-v2 matches-or-beats L6 on the hard live 264-pair
 curve (top-1/3/5) at ~2.4x the scoring speed, and the retrieval-ceiling
 research (B1-B3: bge-m3, contrastive tuning) proved encoder choice does not
 move the precision ceiling — so the smallest encoder that holds retrieval
-quality is the right default. L6 remains available via HiveConfig.ultra_model.
+quality is the right default. L6 remains available via StrataConfig.ultra_model.
 
 Fast semantic similarity scoring with a confidence estimate. Confidence is
 computed as ``1 - normalized_std_dev`` across 3 forward passes with dropout
