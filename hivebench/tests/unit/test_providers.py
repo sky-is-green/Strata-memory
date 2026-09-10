@@ -93,7 +93,9 @@ def test_resolve_default_name_and_case_insensitive():
         Provider(name="LMStudio", base_url="http://localhost:1234"),
         Provider(name="deepseek", base_url="https://api.deepseek.com"),
     ])
-    assert reg.resolve(None) is reg.providers[0]  # no default -> first
+    # resolve() deep-copies to apply resolve_auto_base_url(), so identity is
+    # not preserved; equality is the contract.
+    assert reg.resolve(None) == reg.providers[0]  # no default -> first
     reg.default = "DeepSeek"
     assert reg.resolve(None).name == "deepseek"
     assert reg.resolve("lmstudio").name == "LMStudio"

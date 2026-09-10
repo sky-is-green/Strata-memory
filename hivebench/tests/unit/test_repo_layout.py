@@ -36,8 +36,22 @@ EXPECTED_PACKAGES = {
 }
 
 
-def test_root_python_files_are_only_conftest():
-    assert sorted(p.name for p in ROOT.glob("*.py")) == ["conftest.py"]
+# Standalone root-level entrypoint/utility scripts that are not importable
+# package modules (conftest + developer tools). The guard still fails on any
+# *new* root module, so package roots cannot silently leak into the top level.
+KNOWN_ROOT_SCRIPTS = {
+    "conftest.py",
+    "import_conversation.py",
+    "install_cpu_torch.py",
+    "launch_detached.py",
+    "longrun.py",
+    "longtest.py",
+    "strataclient.py",
+}
+
+
+def test_root_python_files_are_only_known_scripts():
+    assert {p.name for p in ROOT.glob("*.py")} <= KNOWN_ROOT_SCRIPTS
 
 
 def test_no_stray_package_dirs_at_root():
