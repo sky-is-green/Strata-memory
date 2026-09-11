@@ -13,7 +13,7 @@ def test_add_and_retrieve():
     assert chunk.turn == 1
     assert chunk.last_referenced_turn == 1
     assert chunk.decay_multiplier == 1.0
-    assert chunk.times_saved == 1  # RC1: the ingest itself counts as one save
+    assert chunk.times_saved == 0
 
 
 def test_turn_index():
@@ -31,11 +31,11 @@ def test_fingerprint_dedup_by_content():
     a = store.add_chunk(1, "same content")
     b = store.add_chunk(2, "same content")
     # RC1 fingerprint guard: same fingerprint collapses onto the earliest
-    # copy — one chunk, the re-ingest counted as a save, recency refreshed
+    # copy — one chunk, recency refreshed, remembrance counter untouched
     assert b == a
     assert store.count() == 1
     assert store.chunks[a].fingerprint == store.chunks[b].fingerprint
-    assert store.chunks[a].times_saved == 2
+    assert store.chunks[a].times_saved == 0
     assert store.chunks[a].last_referenced_turn == 2
     assert store.chunks[a].turn == 1
 
