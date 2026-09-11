@@ -269,10 +269,12 @@ def test_openai_passthrough_skips_sanitized_echo(tmp_path, monkeypatch):
     assert st["store_chunks"] == 1
 
     # turn 2: the raw secret-bearing reply re-enters as an assistant message
-    # (Studio proxies the full thread history every turn)
+    # (Studio proxies the full thread history every turn). System-first, as
+    # real proxied payloads are: echo-dedup fingerprints what is forwarded.
     r = client.post("/v1/openai/chat/completions", json={
         "model": "m1",
         "messages": [
+            {"role": "system", "content": "sys"},
             {"role": "assistant", "content": SECRET_REPLY},
             {"role": "user", "content": "and what about rotation?"},
         ],
@@ -283,3 +285,99 @@ def test_openai_passthrough_skips_sanitized_echo(tmp_path, monkeypatch):
     # the sanitized chunk matches its raw echo via the normalized fingerprint;
     # the old raw-fingerprint code skipped nothing here
     assert inspect["payload_dedup_skipped"] == 1
+
+
+# ------------------------------------------------ pre-trim payload fingerprints
+TRIMMED_FACT = (
+    "FACT: the JWT signing key rotates at canary ROTATE-42; "
+    "runbook lives at /opt/runbook.md"
+)
+
+
+def _long_thread_padding(n=400):
+    return [
+        {"role": "assistant", "content": "filler " * 40 + str(i)}
+        for i in range(n)
+    ]
+
+
+def _store_only_fact_via_boilerplate_turn(client):
+    """Turn 1 with a boilerplate-only query stores nothing for the query, so
+    the observed reply is the store's only chunk."""
+    r = client.post("/v1/openai/chat/completions", json={
+        "model": "m1",
+        "messages": [{"role": "user", "content": META}],
+    })
+    assert r.status_code == 200, r.text
+    st = client.get("/v1/strata/state", params={"conversation_id": "default"}).json()
+    assert st["store_chunks"] == 1
+
+
+def test_openai_long_thread_trim_keeps_fact_in_curation(tmp_path, monkeypatch):
+    """Oversized-thread bug: payload fingerprints were computed over ALL
+    messages, then the forwarded body was trimmed to the last 8 — an early
+    fact was skipped from curation AND absent from the forwarded body, so the
+    model saw it nowhere. Fingerprints must cover only what is forwarded."""
+    client, _app = _openai_client(tmp_path, monkeypatch)
+    r = client.post("/v1/provider/config", json={
+        "providers": [{"name": "lm", "base_url": "http://mock-llama",
+                       "api_key": "lm-studio", "model": "m1"}],
+    })
+    assert r.status_code == 200, r.text
+
+    import harness.app as appmod
+
+    fake = _FakeUpstream(TRIMMED_FACT)
+    monkeypatch.setattr(appmod, "_upstream_stream", fake)
+    _store_only_fact_via_boilerplate_turn(client)
+
+    messages = (
+        [{"role": "system", "content": "sys"},
+         {"role": "assistant", "content": TRIMMED_FACT}]
+        + _long_thread_padding()
+        + [{"role": "user", "content": "what is the JWT rotation token?"}]
+    )
+    assert sum(len(m["content"]) for m in messages[1:]) > 60_000
+    r = client.post("/v1/openai/chat/completions",
+                    json={"model": "m1", "messages": messages})
+    assert r.status_code == 200, r.text
+
+    forwarded = fake.payload["messages"]
+    assert len(forwarded) - 1 == 8  # system + trimmed body
+    assert all(m.get("content") != TRIMMED_FACT for m in forwarded)
+
+    inspect = client.get("/v1/strata/inspect/default").json()
+    # the fact was trimmed away, so it must still be curated (not echo-skipped)
+    assert inspect["payload_dedup_skipped"] == 0
+    assert "ROTATE-42" in inspect["assembled_preview"]
+
+
+def test_openai_short_thread_echo_skip_unchanged(tmp_path, monkeypatch):
+    """Regression: on a short thread the fact is both fingerprinted and
+    forwarded, so recency-echo dedup still drops it from curation."""
+    client, _app = _openai_client(tmp_path, monkeypatch)
+    r = client.post("/v1/provider/config", json={
+        "providers": [{"name": "lm", "base_url": "http://mock-llama",
+                       "api_key": "lm-studio", "model": "m1"}],
+    })
+    assert r.status_code == 200, r.text
+
+    import harness.app as appmod
+
+    fake = _FakeUpstream(TRIMMED_FACT)
+    monkeypatch.setattr(appmod, "_upstream_stream", fake)
+    _store_only_fact_via_boilerplate_turn(client)
+
+    r = client.post("/v1/openai/chat/completions", json={
+        "model": "m1",
+        "messages": [
+            {"role": "system", "content": "sys"},
+            {"role": "assistant", "content": TRIMMED_FACT},
+            {"role": "user", "content": "what is the JWT rotation token?"},
+        ],
+    })
+    assert r.status_code == 200, r.text
+
+    inspect = client.get("/v1/strata/inspect/default").json()
+    assert inspect["payload_dedup_skipped"] == 1
+    assert "ROTATE-42" not in inspect["assembled_preview"]

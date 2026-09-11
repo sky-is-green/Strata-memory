@@ -2145,9 +2145,27 @@ def create_app(
         headers = {"Authorization": f"Bearer {provider.api_key or 'lm-studio'}",
                    **provider.extra_headers}
         strata = st.strata_for(cid, payload.get("config"), with_backend=False)
-        # Recency-echo guard: stored chunks verbatim-copied in the incoming
-        # payload add zero new information; fingerprint the payload texts with
-        # the store's own fingerprint fn so assemble() can skip them before
+        # Budget guard / forward window: Unsloth Studio proxies its ENTIRE
+        # thread history, which can exceed the upstream context (observed:
+        # 1.04M tokens vs 74k available -> llama.cpp 400). Curation carries
+        # the memory, so oversized payloads are trimmed to the last few
+        # turns; small payloads pass through untouched (dsh/opencode manage
+        # their own windows and are unaffected). The trim runs BEFORE the
+        # echo fingerprints below: only content actually forwarded may
+        # suppress a stored chunk from curation — a fact trimmed off the
+        # tail must stay retrievable.
+        _MAX_FWD_CHARS = 60_000
+        system_msg = (
+            messages[0]
+            if messages and messages[0].get("role") == "system"
+            else None
+        )
+        body_msgs = messages[1:]
+        if sum(len(str(m.get("content") or "")) for m in body_msgs) > _MAX_FWD_CHARS:
+            body_msgs = body_msgs[-8:]
+        # Recency-echo guard: stored chunks verbatim-copied in the forwarded
+        # payload add zero new information; fingerprint those texts with the
+        # store's own fingerprint fn so assemble() can skip them before
         # budget selection (gated by config dedup_against_payload).
         # RC2: fingerprint the SAME normalized form the store persists
         # (boilerplate-stripped + secret-sanitized with the conversation's own
@@ -2158,7 +2176,10 @@ def create_app(
         _prefixes = getattr(_store, "ingest_block_prefixes", None)
         _max_chars = getattr(_store, "max_chunk_chars", None)
         payload_fingerprints = set()
-        for m in messages:
+        forwarded_texts = (
+            ([system_msg] if system_msg is not None else []) + body_msgs
+        )
+        for m in forwarded_texts:
             text = m.get("content")
             if not isinstance(text, str) or not text:
                 continue
@@ -2178,19 +2199,8 @@ def create_app(
             st.save_conversation(cid, strata)
         curated = result.assembled.content if result.assembled is not None else ""
         merged_sys = curated or "You are a helpful assistant."
-        if messages and messages[0].get("role") == "system" \
-                and messages[0].get("content"):
-            merged_sys = merged_sys + "\n\n" + messages[0]["content"]
-        # Budget guard: Unsloth Studio proxies its ENTIRE thread history,
-        # which can exceed the upstream context (observed: 1.04M tokens vs
-        # 74k available -> llama.cpp 400). Curation carries the memory, so
-        # oversized payloads are trimmed to the last few turns; small
-        # payloads pass through untouched (dsh/opencode manage their own
-        # windows and are unaffected).
-        _MAX_FWD_CHARS = 60_000
-        body_msgs = messages[1:]
-        if sum(len(str(m.get("content") or "")) for m in body_msgs) > _MAX_FWD_CHARS:
-            body_msgs = body_msgs[-8:]
+        if system_msg is not None and system_msg.get("content"):
+            merged_sys = merged_sys + "\n\n" + system_msg["content"]
         stream = bool(payload.get("stream"))
         upstream = {
             **payload,
