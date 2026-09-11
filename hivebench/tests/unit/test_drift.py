@@ -25,7 +25,10 @@ def test_similar_topics_no_reset():
 def test_dissimilar_topics_triggers_reset():
     embed_fn = lambda text: np.array([1.0, 0.0]) if "gardening" in text else np.array([0.0, 1.0])
     detector = TopicDriftDetector(embed_fn=embed_fn)
-    all_chunks = _chunks(["gardening tips"] * 3 + ["quantum physics"] * 3)
+    all_chunks = _chunks(
+        ["gardening tips %d" % i for i in range(3)]
+        + ["quantum physics %d" % i for i in range(3)]
+    )  # distinct contents: RC1 collapses verbatim duplicates at ingest
     # recent chunks are the last ones (quantum physics), historical are first half (gardening)
     recent = all_chunks[-2:]
     result = detector.check(recent, all_chunks)

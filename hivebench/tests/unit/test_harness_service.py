@@ -249,8 +249,10 @@ def test_turn_returns_curated_reply(client):
 
 def test_second_turn_increments_and_state_grows(client):
     c, _app = client
-    for _ in range(2):
-        c.post("/v1/strata/turn", json={"query": "tell me about JWT", "conversation_id": "c1"})
+    # distinct queries per turn: RC1 collapses verbatim duplicates at ingest,
+    # so repeating the same query would (correctly) not grow the store
+    for query in ("tell me about JWT", "how does the JWT refresh flow behave"):
+        c.post("/v1/strata/turn", json={"query": query, "conversation_id": "c1"})
     st = c.get("/v1/strata/state", params={"conversation_id": "c1"}).json()
     assert st["turn"] == 2
     assert st["store_chunks"] >= 4  # query+reply per turn (hedge-filter permitting)

@@ -13,6 +13,7 @@ Order (Membrane runs before Retention):
 
 from __future__ import annotations
 
+import re
 import time
 from dataclasses import dataclass, field
 from typing import Optional
@@ -20,9 +21,39 @@ from typing import Optional
 import numpy as np
 
 from cortex.baselines.metrics import estimate_tokens
+from cortex.hedges import HEDGE_CONTRACTIONS
 from cortex.routing import RoutingDecision
 from retention.decay import DecayMatrix
+from retention.filter import strip_boilerplate
 from retention.remembrance import RemembrancePass
+
+
+# Contraction expansions applied case-insensitively so "don't" and "do not"
+# normalize identically on both sides of the similarity compare.
+_CONTRACTION_RES = [
+    (re.compile(re.escape(short), re.IGNORECASE), long)
+    for short, long in HEDGE_CONTRACTIONS.items()
+]
+
+
+def normalize_for_scoring(text: str, prefixes=None) -> str:
+    """Shared normalize+strip pass applied to BOTH the query side and every
+    candidate side before similarity scoring (RC2).
+
+    Meta/tool control lines (harness system-reminders) are removed with the
+    same ingest blocklist the store enforces (``strip_boilerplate``), and
+    contractions are expanded with the shared hedge map so "don't" and
+    "do not" score identically. Returns ``""`` when nothing scorable
+    remains; such candidates are dropped before the drones ever see them.
+    """
+    if not text or not text.strip():
+        return ""
+    stripped = strip_boilerplate(text, prefixes)
+    if not stripped or not stripped.strip():
+        return ""
+    for pattern, long in _CONTRACTION_RES:
+        stripped = pattern.sub(long, stripped)
+    return stripped.strip()
 
 
 @dataclass
@@ -97,20 +128,31 @@ class ContextAssembler:
         # 2. Route + score all chunks (comb records join the candidate pool)
         _t = time.perf_counter()
         routing = router.route(query, store.get_turns())
-        all_contents = store.all_contents() + [c.content for c in comb_candidates]
         all_chunks = store.all_chunks() + comb_candidates
+        # RC2: score the normalized forms — the query and every candidate go
+        # through the same strip+expand pass, so meta/tool control text can
+        # neither skew the query embedding nor win as a candidate. Candidates
+        # with nothing scorable left are dropped before the drones run.
+        prefixes = getattr(store, "ingest_block_prefixes", None)
+        scoring_query = normalize_for_scoring(query, prefixes)
+        scored_pairs = [
+            (chunk, normalize_for_scoring(chunk.content, prefixes))
+            for chunk in all_chunks
+        ]
+        scored_pairs = [(c, n) for c, n in scored_pairs if n]
+        scoring_texts = [normalized for _, normalized in scored_pairs]
         if routing.route_to == "escalation":
-            scores = escalation.process(query, all_contents, ultra_small, medium)
+            scores = escalation.process(scoring_query, scoring_texts, ultra_small, medium)
         elif routing.route_to == "medium":
-            scores = medium.score(query, all_contents)
+            scores = medium.score(scoring_query, scoring_texts)
         else:
-            scores = ultra_small.score(query, all_contents)
+            scores = ultra_small.score(scoring_query, scoring_texts)
         self._tick("scoring_ms", _t)
 
         raw_scores = {}
-        for i, s in enumerate(scores):
-            if i < len(all_chunks):
-                raw_scores[all_chunks[i].id] = s.relevance_score
+        for k, s in enumerate(scores):
+            if k < len(scored_pairs):
+                raw_scores[scored_pairs[k][0].id] = s.relevance_score
 
         # 3. Deduplicate (Membrane first) + refresh decay state
         _t = time.perf_counter()
@@ -121,10 +163,12 @@ class ContextAssembler:
             elif store.embed_fn is not None:
                 embeddings[c.id] = np.asarray(store.embed_fn(c.content))
         if not skip_dedup:
-            surviving, refresh_map = dedup.deduplicate(all_chunks, embeddings)
+            surviving, refresh_map = dedup.deduplicate(
+                [c for c, _ in scored_pairs], embeddings
+            )
             store.apply_refresh(refresh_map)
         else:
-            surviving, refresh_map = all_chunks, {}
+            surviving, refresh_map = [c for c, _ in scored_pairs], {}
         self._tick("dedup_ms", _t)
 
         # 4. Topic drift -> drift penalties

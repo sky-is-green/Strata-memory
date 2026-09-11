@@ -140,6 +140,16 @@ class ContextStore:
         if self.sanitize:
             content = sanitize_for_storage(content, self.max_chunk_chars)
         fingerprint = content_fingerprint(content)
+        # RC1 fingerprint guard: a chunk with the same (sanitized) fingerprint
+        # already in the store is a verbatim duplicate — do NOT append a
+        # parallel copy that would split decay bookkeeping across clones.
+        # The re-ingest still counts as a save and refreshes recency; the
+        # earliest copy's turn / decay_multiplier / relevance_history win.
+        for existing in self.chunks.values():
+            if existing.fingerprint == fingerprint:
+                existing.times_saved += 1
+                existing.last_referenced_turn = turn
+                return existing.id
         cid = chunk_id or hashlib.md5(f"{turn}:{content}".encode("utf-8")).hexdigest()[:12]
         self.chunks[cid] = ContextChunk(
             id=cid,
@@ -147,6 +157,7 @@ class ContextStore:
             turn=turn,
             fingerprint=fingerprint,
             timestamp=now_iso(),
+            times_saved=1,
             last_referenced_turn=turn,
         )
         self.turn_index.setdefault(turn, []).append(cid)

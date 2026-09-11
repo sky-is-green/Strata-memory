@@ -49,11 +49,13 @@ def test_decay_multiplier_increases_per_save():
         result = pass_.process([chunk], "auth", drone)[0]
         sequence.append(result.new_decay)
 
-    # 1.0 * 1.8, then * 2.1, then * 2.4
-    assert sequence[0] == pytest.approx(1.8)
-    assert sequence[1] == pytest.approx(1.8 * 2.1)
-    assert sequence[2] == pytest.approx(1.8 * 2.1 * 2.4)
-    assert chunk.times_saved == 3
+    # RC1: the ingest itself counts as one save, so a fresh chunk starts at
+    # times_saved == 1 and the factor ladder shifts one rung: 2.1, then
+    # * 2.4, then * 2.7 (was 1.8 / * 2.1 / * 2.4 from a zero start)
+    assert sequence[0] == pytest.approx(2.1)
+    assert sequence[1] == pytest.approx(2.1 * 2.4)
+    assert sequence[2] == pytest.approx(2.1 * 2.4 * 2.7)
+    assert chunk.times_saved == 4
     assert chunk.decay_multiplier == pytest.approx(sequence[2])
 
 

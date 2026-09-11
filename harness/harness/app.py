@@ -84,7 +84,8 @@ from harness.reports import (
     resolve_run_dir,
 )
 from logs.event_logger import EventLogger
-from retention.store import ContextStore, content_fingerprint
+from retention.store import ContextStore, content_fingerprint, sanitize_for_storage
+from retention.filter import strip_boilerplate
 from strata.mcp.server import McpContext, handle_message
 from strata.mcp.tools import remember as mcp_remember
 from strata.mcp.tools import search as mcp_search
@@ -2148,11 +2149,27 @@ def create_app(
         # payload add zero new information; fingerprint the payload texts with
         # the store's own fingerprint fn so assemble() can skip them before
         # budget selection (gated by config dedup_against_payload).
-        payload_fingerprints = {
-            content_fingerprint(m.get("content"))
-            for m in messages
-            if isinstance(m.get("content"), str) and m.get("content")
-        }
+        # RC2: fingerprint the SAME normalized form the store persists
+        # (boilerplate-stripped + secret-sanitized with the conversation's own
+        # ingest settings) — raw payload text never matches a
+        # sanitized/truncated stored chunk, so those echoes used to escape
+        # echo-dedup forever.
+        _store = getattr(strata, "store", None)
+        _prefixes = getattr(_store, "ingest_block_prefixes", None)
+        _max_chars = getattr(_store, "max_chunk_chars", None)
+        payload_fingerprints = set()
+        for m in messages:
+            text = m.get("content")
+            if not isinstance(text, str) or not text:
+                continue
+            normalized = strip_boilerplate(text, _prefixes)
+            if not normalized or not normalized.strip():
+                continue
+            if _max_chars is not None:
+                normalized = sanitize_for_storage(normalized, _max_chars)
+            else:
+                normalized = sanitize_for_storage(normalized)
+            payload_fingerprints.add(content_fingerprint(normalized))
         with st.lock_for(cid):
             result = strata.process_turn(
                 query, conversation_id=cid,
