@@ -149,6 +149,11 @@ class ContextStore:
         for existing in self.chunks.values():
             if existing.fingerprint == fingerprint:
                 existing.last_referenced_turn = turn
+                # The dedup turn still belongs to the conversation: register
+                # the existing id so the recency lookback (get_recent_chunks /
+                # drift) sees it. Without this, turns that only re-ingest old
+                # content vanish from the lookback window.
+                self.turn_index.setdefault(turn, []).append(existing.id)
                 return existing.id
         cid = chunk_id or hashlib.md5(f"{turn}:{content}".encode("utf-8")).hexdigest()[:12]
         self.chunks[cid] = ContextChunk(
@@ -187,13 +192,17 @@ class ContextStore:
         if chunk is None:
             return
         self._embeddings.pop(cid, None)
-        ids = self.turn_index.get(chunk.turn)
-        if ids:
-            ids = [i for i in ids if i != cid]
-            if ids:
-                self.turn_index[chunk.turn] = ids
+        # A deduped chunk can be registered on several turns (RC1 guard), so
+        # purge it from every turn list, not just its creation turn; leaving
+        # ghosts behind makes get_recent_chunks raise KeyError after eviction.
+        for turn, ids in list(self.turn_index.items()):
+            if cid not in ids:
+                continue
+            remaining = [i for i in ids if i != cid]
+            if remaining:
+                self.turn_index[turn] = remaining
             else:
-                self.turn_index.pop(chunk.turn, None)
+                self.turn_index.pop(turn, None)
         if self.comb is not None:
             # Surplus curation: freeze into the comb what the strata once
             # engaged with (relevance history or remembrance-saved decay

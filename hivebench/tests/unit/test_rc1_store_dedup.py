@@ -31,8 +31,8 @@ def test_same_content_saved_twice_collapses_to_one_chunk():
     assert chunk.relevance_history == [(1, 0.9)]
     assert chunk.turn == 1
     assert chunk.content == "the deploy uses blue-green slots"
-    # no ghost entry in the turn index for the duplicate
-    assert store.turn_index == {1: [first]}
+    # the dedup turn is registered too (same id): recency lookback must see it
+    assert store.turn_index == {1: [first], 5: [first]}
 
 
 def test_first_save_leaves_remembrance_counter_at_zero():
@@ -80,3 +80,35 @@ def test_repeated_saves_refresh_recency_without_touching_the_ladder():
     assert store.chunks[cid].times_saved == 0
     assert store.chunks[cid].last_referenced_turn == 3
     assert store.chunks[cid].turn == 1
+
+
+def test_dedup_only_turns_stay_in_the_recent_lookback():
+    """A turn that only re-ingests old content must still count as a turn:
+    get_recent_chunks()/drift lookback reads turn_index, and the RC1 guard
+    used to return before registering the dedup turn."""
+    store = ContextStore()
+    a = store.add_chunk(1, "first topic")
+    b = store.add_chunk(2, "second topic")
+    c = store.add_chunk(3, "third topic")
+    # turns 4-5 carry no new content (harness re-ingest of existing messages)
+    store.add_chunk(4, "first topic")
+    store.add_chunk(5, "third topic")
+
+    assert store.get_turns()[-3:] == [3, 4, 5]
+    assert [chunk.id for chunk in store.get_recent_chunks(3)] == [c, a, c]
+    assert b not in store.get_recent_chunks(3)
+
+
+def test_eviction_purges_dedup_turn_registrations():
+    """Dedup turns register an existing id on later turns; eviction must
+    purge every entry or get_recent_chunks hits a missing chunk id."""
+    store = ContextStore(max_chunks=1)
+    a = store.add_chunk(1, "repeated content")
+    store.add_chunk(2, "repeated content")  # dedup turn -> turn_index[2] += a
+    store.add_chunk(3, "other content")  # overflow evicts the older a
+
+    assert a not in store.chunks
+    assert all(a not in ids for ids in store.turn_index.values())
+    assert [chunk.id for chunk in store.get_recent_chunks(3)] == [
+        store.turn_index[3][0]
+    ]
