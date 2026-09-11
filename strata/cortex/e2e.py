@@ -51,7 +51,7 @@ class FakeUltraSmall:
     """Fast deterministic drone for offline harness verification."""
 
     def score(self, query, chunks):
-        return [ChunkScore(i, 0.9 if "JWT" in c else 0.2, 1.0) for i, c in enumerate(chunks)]
+        return [ChunkScore(i, 0.9 if "JWT" in c else 0.3, 1.0) for i, c in enumerate(chunks)]
 
     def embed(self, text):
         return np.array([1.0, 0.0, 0.0])

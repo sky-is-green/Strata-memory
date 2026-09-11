@@ -13,6 +13,7 @@ Order (Membrane runs before Retention):
 
 from __future__ import annotations
 
+import copy
 import re
 import time
 from dataclasses import dataclass, field
@@ -112,6 +113,8 @@ class ContextAssembler:
         comb_candidates: Optional[list] = None,
         payload_fingerprints: Optional[set] = None,
         dedup_against_payload: bool = True,
+        relevance_floor: float = 0.25,
+        max_chunk_share: float = 0.5,
     ) -> AssembledContext:
         comb_candidates = comb_candidates or []
         comb_by_id = {c.id: c for c in comb_candidates}
@@ -212,7 +215,14 @@ class ContextAssembler:
         _t = time.perf_counter()
         scored = sorted(effective.items(), key=lambda kv: kv[1], reverse=True)
         pool = {**store.chunks, **comb_by_id}
-        selected = self._select_within_budget(scored, pool, token_budget)
+        selected = self._select_within_budget(
+            scored,
+            pool,
+            token_budget,
+            raw_scores=raw_scores,
+            relevance_floor=relevance_floor,
+            max_chunk_share=max_chunk_share,
+        )
         self._tick("select_ms", _t)
 
         # Selection is curation: mark selected store chunks so the surplus
@@ -224,9 +234,10 @@ class ContextAssembler:
         for c in selected:
             if c.id in comb_by_id:
                 continue
-            hist = list(getattr(c, "relevance_history", []) or [])
+            target = pool.get(c.id, c)
+            hist = list(getattr(target, "relevance_history", []) or [])
             hist.append((current_turn, round(raw_scores.get(c.id, 0.0), 3)))
-            c.relevance_history = hist[-10:]
+            target.relevance_history = hist[-10:]
 
         result = AssembledContext(
             content=self._format_context(selected),
@@ -245,19 +256,60 @@ class ContextAssembler:
         )
         return result
 
-    def _select_within_budget(self, scored, pool: dict, token_budget: int) -> list:
+    def _select_within_budget(
+        self,
+        scored,
+        pool: dict,
+        token_budget: int,
+        raw_scores=None,
+        relevance_floor: float = 0.25,
+        max_chunk_share: float = 0.5,
+    ) -> list:
+        # raw_scores=None keeps the original pure-greedy fill for legacy
+        # callers: no floor and no per-chunk cap are applied.
+        legacy = raw_scores is None
+        share_cap = (
+            int(token_budget * max_chunk_share)
+            if not legacy and max_chunk_share
+            else 0
+        )
         selected = []
         used = 0
         for cid, _score in scored:
             chunk = pool.get(cid)
             if chunk is None:
                 continue
-            cost = estimate_tokens(chunk.content)
+            if not legacy and raw_scores.get(cid, 0.0) < relevance_floor:
+                continue
+            content = chunk.content
+            cost = estimate_tokens(content)
+            if share_cap and cost > share_cap:
+                content = self._truncate_to_token_cap(content, share_cap)
+                if len(content) < 32:
+                    continue
+                chunk = copy.copy(chunk)
+                chunk.content = content
+                cost = estimate_tokens(content)
             if used + cost > token_budget:
                 continue
             selected.append(chunk)
             used += cost
         return selected
+
+    @staticmethod
+    def _truncate_to_token_cap(text: str, token_cap: int) -> str:
+        if token_cap <= 0:
+            return ""
+        if estimate_tokens(text) <= token_cap:
+            return text
+        lo, hi = 0, len(text)
+        while lo < hi:
+            mid = (lo + hi + 1) // 2
+            if estimate_tokens(text[:mid]) <= token_cap:
+                lo = mid
+            else:
+                hi = mid - 1
+        return text[:lo]
 
     @staticmethod
     def _format_context(selected: list) -> str:

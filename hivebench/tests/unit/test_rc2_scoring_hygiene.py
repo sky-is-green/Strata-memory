@@ -46,7 +46,7 @@ class FakeDrone:
                 return 0.99
             if "JWT" in c:
                 return 0.9
-            return 0.1
+            return 0.3
 
         return [ChunkScore(i, relevance(c), 1.0) for i, c in enumerate(chunks)]
 
