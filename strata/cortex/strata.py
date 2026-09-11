@@ -99,7 +99,9 @@ class Strata:
         self.drift = TopicDriftDetector(
             embed_fn=self.ultra.embed, threshold=self.config.drift_threshold
         )
-        self.budget = AdaptiveBudget()
+        self.budget = AdaptiveBudget(
+            ultra_small_budget_tokens=self.config.ultra_small_budget_tokens
+        )
         self.assembler = ContextAssembler(collect_timings=True)
         self.monitor = PipelineHealthMonitor(logger=logger)
         self.degradation = GracefulDegradation()
@@ -144,11 +146,13 @@ class Strata:
                 comb_relevant_only=self.config.comb_relevant_only,
                 sanitize=self.config.strip_secrets,
                 max_chunk_chars=self.config.max_chunk_chars,
+                ingest_block_prefixes=self.config.ingest_block_prefixes,
             )
         return ContextStore(
             embed_fn=self.ultra.embed, max_chunks=self.config.max_chunks,
             sanitize=self.config.strip_secrets,
             max_chunk_chars=self.config.max_chunk_chars,
+            ingest_block_prefixes=self.config.ingest_block_prefixes,
         )
 
     # ------------------------------------------------------------------
@@ -172,7 +176,8 @@ class Strata:
 
     # ------------------------------------------------------------------
     def process_turn(
-        self, query: str, conversation_id: Optional[str] = None, record_exchange: bool = True
+        self, query: str, conversation_id: Optional[str] = None, record_exchange: bool = True,
+        payload_fingerprints: Optional[set] = None,
     ) -> TurnResult:
         self.turn += 1
 
@@ -203,6 +208,8 @@ class Strata:
                     max_context=self.config.max_context,
                     skip_remembrance=self.degradation.should_skip_remembrance(),
                     skip_dedup=self.degradation.should_skip_dedup(),
+                    payload_fingerprints=payload_fingerprints,
+                    dedup_against_payload=self.config.dedup_against_payload,
                 )
                 # Comb gate: consult the surplus tier only when the active
                 # store's best raw match is weak — normal turns pay zero comb
@@ -233,6 +240,8 @@ class Strata:
                             skip_remembrance=self.degradation.should_skip_remembrance(),
                             skip_dedup=self.degradation.should_skip_dedup(),
                             comb_candidates=comb_candidates,
+                            payload_fingerprints=payload_fingerprints,
+                            dedup_against_payload=self.config.dedup_against_payload,
                         )
                 timings.update(self.assembler.last_timings)
                 timings["assembly_total_ms"] = round((time.perf_counter() - t0) * 1000.0, 3)
@@ -389,6 +398,7 @@ class Strata:
             "budget": {"total": a.budget, "used": a.token_count,
                        "utilization": round(a.token_count / max(a.budget, 1), 3)},
             "top_raw_score": round(a.top_raw_score, 3),
+            "payload_dedup_skipped": getattr(a, "payload_dedup_skipped", 0),
             "selected_chunks": selected,
             "dropped_chunks": dropped[:20],
             "dropped_count": len(dropped),

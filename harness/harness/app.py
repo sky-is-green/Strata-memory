@@ -84,7 +84,7 @@ from harness.reports import (
     resolve_run_dir,
 )
 from logs.event_logger import EventLogger
-from retention.store import ContextStore
+from retention.store import ContextStore, content_fingerprint
 from strata.mcp.server import McpContext, handle_message
 from strata.mcp.tools import remember as mcp_remember
 from strata.mcp.tools import search as mcp_search
@@ -1736,10 +1736,10 @@ def create_app(
         ):
             st.begin(req.conversation_id)
             with st.lock_for(req.conversation_id):
-                strata.store.add_chunk(strata.turn, reply)
-                st.save_conversation(req.conversation_id, strata)
+                stored = strata.store.add_chunk(strata.turn, reply) is not None
+                if stored:
+                    st.save_conversation(req.conversation_id, strata)
             st.end(req.conversation_id)
-            stored = True
         return {"ok": True, "stored": stored, "turn": strata.turn}
 
     # ------------------------------------------------------------------
@@ -1824,9 +1824,9 @@ def create_app(
                 strata.config.filter_hedge_replies
                 and Strata._is_hedge_reply(reply)
             ):
-                strata.store.add_chunk(strata.turn, reply)
-                st.save_conversation(req.conversation_id, strata)
-                stored = True
+                stored = strata.store.add_chunk(strata.turn, reply) is not None
+                if stored:
+                    st.save_conversation(req.conversation_id, strata)
             elapsed = max(time.time() - started, 1e-6)
             completion_tokens = (usage or {}).get("completion_tokens") or 0
             yield "data: " + json.dumps({
@@ -2099,6 +2099,25 @@ def create_app(
     # shape, curated system context, the reply observed back into the
     # store. Conversation key: X-Strata-Conversation header > payload "user"
     # > "default".
+    # OpenAI-shape model list for clients that probe {base_url}/models
+    # (Unsloth Studio's connection test) when pointed at the curated
+    # /v1/openai passthrough. /v1/models above is the setup tooling shape;
+    # this one is the wire shape external clients expect.
+    @app.get("/v1/openai/models")
+    def openai_models():
+        try:
+            provider = st.registry.resolve(None)
+        except LookupError:
+            raise HTTPException(502, "no provider configured")
+        try:
+            ids = _list_models(provider.base_url.rstrip("/"))
+        except Exception as exc:  # noqa: BLE001 - surfaced to the caller
+            raise HTTPException(502, f"cannot list models from upstream: {exc}")
+        if not ids and getattr(provider, "model", None):
+            ids = [provider.model]
+        return {"object": "list",
+                "data": [{"id": m, "object": "model"} for m in ids]}
+
     @app.post("/v1/openai/chat/completions")
     async def openai_chat_completions(request: Request):
         payload = await request.json()
@@ -2125,20 +2144,42 @@ def create_app(
         headers = {"Authorization": f"Bearer {provider.api_key or 'lm-studio'}",
                    **provider.extra_headers}
         strata = st.strata_for(cid, payload.get("config"), with_backend=False)
+        # Recency-echo guard: stored chunks verbatim-copied in the incoming
+        # payload add zero new information; fingerprint the payload texts with
+        # the store's own fingerprint fn so assemble() can skip them before
+        # budget selection (gated by config dedup_against_payload).
+        payload_fingerprints = {
+            content_fingerprint(m.get("content"))
+            for m in messages
+            if isinstance(m.get("content"), str) and m.get("content")
+        }
         with st.lock_for(cid):
-            result = strata.process_turn(query, conversation_id=cid)
+            result = strata.process_turn(
+                query, conversation_id=cid,
+                payload_fingerprints=payload_fingerprints,
+            )
             st.save_conversation(cid, strata)
         curated = result.assembled.content if result.assembled is not None else ""
         merged_sys = curated or "You are a helpful assistant."
         if messages and messages[0].get("role") == "system" \
                 and messages[0].get("content"):
             merged_sys = merged_sys + "\n\n" + messages[0]["content"]
+        # Budget guard: Unsloth Studio proxies its ENTIRE thread history,
+        # which can exceed the upstream context (observed: 1.04M tokens vs
+        # 74k available -> llama.cpp 400). Curation carries the memory, so
+        # oversized payloads are trimmed to the last few turns; small
+        # payloads pass through untouched (dsh/opencode manage their own
+        # windows and are unaffected).
+        _MAX_FWD_CHARS = 60_000
+        body_msgs = messages[1:]
+        if sum(len(str(m.get("content") or "")) for m in body_msgs) > _MAX_FWD_CHARS:
+            body_msgs = body_msgs[-8:]
         stream = bool(payload.get("stream"))
         upstream = {
             **payload,
             "model": provider.model or payload.get("model") or "local",
             "stream": stream,
-            "messages": [{"role": "system", "content": merged_sys}] + messages[1:],
+            "messages": [{"role": "system", "content": merged_sys}] + body_msgs,
         }
         upstream.setdefault("stream_options", {"include_usage": True})
 
@@ -2148,9 +2189,9 @@ def create_app(
                 strata.config.filter_hedge_replies
                 and Strata._is_hedge_reply(reply)
             ):
-                strata.store.add_chunk(strata.turn, reply)
-                st.save_conversation(cid, strata)
-                stored = True
+                stored = strata.store.add_chunk(strata.turn, reply) is not None
+                if stored:
+                    st.save_conversation(cid, strata)
             return stored
 
         if not stream:

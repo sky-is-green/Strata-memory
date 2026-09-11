@@ -48,6 +48,10 @@ class AssembledContext:
     # chunks still enter the context when leftover budget remains, so
     # "not selected" alone is not a reliable surplus signal.
     raw_scores: dict = field(default_factory=dict)
+    # Stored chunks skipped because their fingerprint matched content already
+    # present in the incoming request messages (recency echo); surfaced via
+    # /v1/strata/inspect.
+    payload_dedup_skipped: int = 0
 
 
 class ContextAssembler:
@@ -75,6 +79,8 @@ class ContextAssembler:
         skip_remembrance: bool = False,
         skip_dedup: bool = False,
         comb_candidates: Optional[list] = None,
+        payload_fingerprints: Optional[set] = None,
+        dedup_against_payload: bool = True,
     ) -> AssembledContext:
         comb_candidates = comb_candidates or []
         comb_by_id = {c.id: c for c in comb_candidates}
@@ -139,6 +145,21 @@ class ContextAssembler:
         )
         self._tick("decay_ms", _t)
 
+        # 5b. Payload dedup: skip stored chunks that are verbatim copies of
+        # content already present in the incoming request messages (recency
+        # echo). Matched on the same 12-hex fingerprint the store assigns at
+        # write time. Runs before budget selection so echoes consume nothing.
+        payload_dedup_skipped = 0
+        if dedup_against_payload and payload_fingerprints:
+            pool_by_id = {c.id: c for c in surviving}
+            kept_ids = {
+                cid for cid in effective
+                if getattr(pool_by_id.get(cid), "fingerprint", None)
+                not in payload_fingerprints
+            }
+            payload_dedup_skipped = len(effective) - len(kept_ids)
+            effective = {cid: v for cid, v in effective.items() if cid in kept_ids}
+
         # 6. Budget
         high_relevance = sum(1 for v in effective.values() if v > 0.6)
         token_budget = budget.compute(routing.route_to, high_relevance, max_context)
@@ -163,7 +184,7 @@ class ContextAssembler:
             hist.append((current_turn, round(raw_scores.get(c.id, 0.0), 3)))
             c.relevance_history = hist[-10:]
 
-        return AssembledContext(
+        result = AssembledContext(
             content=self._format_context(selected),
             token_count=self._count_tokens(selected),
             budget=token_budget,
@@ -176,7 +197,9 @@ class ContextAssembler:
                 max(raw_scores.items(), key=lambda kv: kv[1])[0] if raw_scores else None
             ),
             raw_scores=raw_scores,
+            payload_dedup_skipped=payload_dedup_skipped,
         )
+        return result
 
     def _select_within_budget(self, scored, pool: dict, token_budget: int) -> list:
         selected = []

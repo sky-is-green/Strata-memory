@@ -14,6 +14,7 @@ from datetime import datetime, timezone
 from typing import Callable, Optional
 
 from cortex.baselines.metrics import now_iso
+from retention.filter import DEFAULT_INGEST_BLOCK_PREFIXES, strip_boilerplate
 
 # ---------------------------------------------------------------------------
 # Store-time hygiene (U2): credentials and oversized blobs must not reach the
@@ -52,6 +53,15 @@ _BASE64_BLOB = re.compile(r"[A-Za-z0-9+/]{256,}={0,2}")
 
 TRUNCATION_MARK = "\n…[truncated]"
 DEFAULT_MAX_CHUNK_CHARS = 4000
+
+
+def content_fingerprint(text: str) -> str:
+    """12-hex content fingerprint shared by stored chunks and payload dedup.
+
+    Stored chunks (``ContextChunk.fingerprint``) and incoming request message
+    texts use this same function so verbatim copies compare equal.
+    """
+    return hashlib.md5(text.encode("utf-8")).hexdigest()[:12]
 
 
 def sanitize_for_storage(text: str, max_chars: int = DEFAULT_MAX_CHUNK_CHARS) -> str:
@@ -103,6 +113,7 @@ class ContextStore:
         comb_relevant_only: bool = True,
         sanitize: bool = True,
         max_chunk_chars: int = DEFAULT_MAX_CHUNK_CHARS,
+        ingest_block_prefixes: Optional[list] = None,
     ) -> None:
         self.chunks: dict[str, ContextChunk] = {}
         self.turn_index: dict[int, list[str]] = {}
@@ -113,11 +124,22 @@ class ContextStore:
         self.comb_relevant_only = comb_relevant_only
         self.sanitize = sanitize
         self.max_chunk_chars = max_chunk_chars
+        self.ingest_block_prefixes: list = (
+            list(DEFAULT_INGEST_BLOCK_PREFIXES)
+            if ingest_block_prefixes is None
+            else list(ingest_block_prefixes)
+        )
 
-    def add_chunk(self, turn: int, content: str, chunk_id: Optional[str] = None) -> str:
+    def add_chunk(self, turn: int, content: str, chunk_id: Optional[str] = None) -> Optional[str]:
+        # Harness boilerplate (system-reminder control text) is never
+        # stored: drop blocked lines first so a fully-boilerplate turn
+        # stores zero chunks and a mixed turn keeps only the remainder.
+        content = strip_boilerplate(content, self.ingest_block_prefixes)
+        if not content or not content.strip():
+            return None
         if self.sanitize:
             content = sanitize_for_storage(content, self.max_chunk_chars)
-        fingerprint = hashlib.md5(content.encode("utf-8")).hexdigest()[:12]
+        fingerprint = content_fingerprint(content)
         cid = chunk_id or hashlib.md5(f"{turn}:{content}".encode("utf-8")).hexdigest()[:12]
         self.chunks[cid] = ContextChunk(
             id=cid,
@@ -247,13 +269,18 @@ class ContextStore:
     def to_dict(self) -> dict:
         return {
             "max_chunks": self.max_chunks,
+            "ingest_block_prefixes": list(self.ingest_block_prefixes),
             "chunks": [c.to_dict() for c in self.all_chunks()],
             "turn_index": {str(t): ids for t, ids in self.turn_index.items()},
         }
 
     @classmethod
     def from_dict(cls, data: dict, embed_fn: Optional[Callable[[str], object]] = None) -> "ContextStore":
-        store = cls(embed_fn=embed_fn, max_chunks=data.get("max_chunks"))
+        store = cls(
+            embed_fn=embed_fn,
+            max_chunks=data.get("max_chunks"),
+            ingest_block_prefixes=data.get("ingest_block_prefixes", None),
+        )
         for raw in data.get("chunks", []):
             chunk = ContextChunk(
                 id=raw["id"],

@@ -100,6 +100,15 @@ def remember(strata: Any, text: str) -> dict:
     """
     content = _require_text(text, "text")
     chunk_id = strata.store.add_chunk(strata.turn, content)
+    if chunk_id is None:
+        # harness boilerplate is never stored (ingest blocklist)
+        return {
+            "ok": True,
+            "stored": False,
+            "chunk_id": None,
+            "turn": strata.turn,
+            "store_chunks": len(strata.store.all_chunks()),
+        }
     return {
         "ok": True,
         "stored": True,

@@ -12,6 +12,7 @@ from pathlib import Path
 from typing import Optional
 
 from cortex.interop import GatekeeperSeam
+from retention.filter import DEFAULT_INGEST_BLOCK_PREFIXES
 
 
 @dataclass
@@ -38,11 +39,27 @@ class StrataConfig:
     # anything reaches the store, checkpoints, or comb archives
     strip_secrets: bool = True
     max_chunk_chars: int = 4000
+    # Harness boilerplate blocklist (retention.filter.strip_boilerplate):
+    # system-reminder control text the upstream harness injects around tool
+    # calls must never become persistent chunks. Matched by normalized
+    # prefix (first 80 chars, case-sensitive); [] disables the filter.
+    # Overridable per conversation via the `config` dict, like
+    # sanitize_context / strip_secrets.
+    ingest_block_prefixes: list = field(
+        default_factory=lambda: list(DEFAULT_INGEST_BLOCK_PREFIXES)
+    )
     # --- focal ---
     generation_headroom: int = 2048
     max_context: int = 8192
     max_chunks: int = 1000
     max_tokens: Optional[int] = None  # reply cap for iteration/stability runs
+    # Payload dedup: skip stored chunks whose fingerprint matches content
+    # already present in the incoming request messages (recency echo adds
+    # zero new information while consuming budget). Enabled by default.
+    dedup_against_payload: bool = True
+    # Ultra_small route budget floor (lo end of its adaptive range); raised
+    # without code changes for A/B tests (e.g. 2000). Other routes unchanged.
+    ultra_small_budget_tokens: int = 1000
     # Experimenter sampling surface (backend.sampling.parse_sampling): the
     # OpenAI-compat sampling fields (temperature, top_p, top_k, min_p,
     # repeat/presence/frequency penalties, stop, seed, mirostat). Empty =
