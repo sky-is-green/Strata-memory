@@ -20,24 +20,22 @@ Requires Python 3.10+ and, for live runs, any OpenAI-compatible backend (LM Stud
 
 ```powershell
 git clone https://github.com/sky-is-green/strata-memory.git
+git clone https://github.com/sky-is-green/hivebench.git
 cd strata-memory
 python -m venv .venv
-.\.venv\Scripts\python -m pip install -e ".[harness,bench]"
-.\.venv\Scripts\python -m harness --setup   # creates config, probes backend, warms the drone
+.\.venv\Scripts\python -m pip install -e .   # the system: drones, cortex, retention, backends
+cd ..\hivebench
+python -m venv .venv
+.\.venv\Scripts\python -m pip install -e .   # suite + studio (console scripts)
+.\.venv\Scripts\python -m harness --setup   # from hivebench: copies providers config, probes backend, warms the drone
 .\.venv\Scripts\python -m harness           # studio UI on http://127.0.0.1:8765
 ```
 
-Linux/macOS: `python3 -m venv .venv && .venv/bin/python -m pip install -e ".[harness,bench]"`.
-Narrower layers install cleanly too:
-
-| Install target | What you get |
-|---|---|
-| `pip install strata-memory` | The system: drones, cortex, retention, backends |
-| `pip install "strata-memory[harness]"` | + HiveBench Studio (FastAPI sidecar) |
-| `pip install "strata-memory[bench]"` | + the evaluation suite (pytest, ST trainer) |
+Linux/macOS: same in each checkout — `python3 -m venv .venv && .venv/bin/python -m pip install -e .`
+The Studio sidecar and the evaluation suite are no longer extras of this package — they live in the sibling `hivebench` repo (installed above); its README lists the console scripts.
 
 The full fresh-machine walkthrough (fixtures, live benchmark, troubleshooting)
-is `docs/INSTALL.md`; every claim below is reproduced by commands in this repo.
+is `docs/INSTALL.md`; every claim below is reproduced by commands in these two checkouts.
 
 ## Why Strata
 
@@ -139,6 +137,7 @@ it does it deterministically, offline, and replayably:
   crashes and reboots:
 
   ```powershell
+  cd ..\hivebench
   .\.venv\Scripts\python -m experiments.paired_ab --live --model prism-ml/bonsai-27b --max-turns 45 --fifo-budget 1500 --checkpoint-every 2 --output runs/paired_ab.json
   # killed mid-run? relaunch with --resume runs/paired_ab_trunc-style checkpoint,
   # or let tools/resume_evidence.ps1 loop until the final report exists.
@@ -267,7 +266,7 @@ polling.
 
 | Suite | Covers | Current state |
 |---|---|---|
-| unit (hivebench repo) | every layer, offline, no LLM calls | 546 tests — 545 pass; 1 env-gated (host missing `zstandard`) |
+| unit (hivebench repo) | every layer, offline, no LLM calls | 546 tests, all passing (verified Sep 12) |
 | integration (hivebench repo) | pipeline end-to-end, incl. live-gated MCP suite | 53 tests |
 | Live batteries | paired A/B vs FIFO, protocol P1–P11 verdicts, MCP battery | recorded in white paper §8 and per-run reports |
 
@@ -291,23 +290,22 @@ print(result.reply)
 
 ## Run the studio (HiveBench Studio)
 
-The two commands from [Quickstart](#quickstart) are the whole story: `--setup`
+The two commands from [Quickstart](#quickstart) run from the sibling `hivebench` checkout: `--setup`
 copies `providers.example.json` → `providers.local.json` if missing, probes for
 a reachable backend (LM Studio on `:1234`, or auto-starts the local
 `llama-server` from `models/gguf`), and prints the next step. The studio serves
 the strata over a FastAPI API, the endpoint contract lives in
-`harness/harness/app.py`, and `docs/INTEGRATE.md` shows how to point external
+`..\hivebench/harness/harness/app.py`, and `docs/INTEGRATE.md` shows how to point external
 clients at it.
 
 ## Run the test suite
 
-The suite is grouped by what it measures (offline; no LLM required):
+The suite lives in the sibling hivebench repo and runs from that checkout (offline; no LLM required):
 
 ```powershell
-.\.venv\Scripts\python -m tests.run_hive_tests --group maximum   # full suite (default)
-.\.venv\Scripts\python -m tests.run_hive_tests --group speed     # latency/PES
-.\.venv\Scripts\python -m tests.run_hive_tests --group intelligence  # retrieval/assembly
-.\.venv\Scripts\python -m tests.run_hive_tests --group skills    # pipeline/backends
+cd ..\hivebench
+.\.venv\Scripts\python -m pytest tests/unit -q   # ~25 s, every layer
+.\.venv\Scripts\python tests/run_hive_tests.py --group speed|intelligence|skills|maximum
 ```
 
 ## Try it live
@@ -316,6 +314,7 @@ The live benchmark talks to an OpenAI-compatible backend (e.g. LM Studio on
 `localhost:1234`). A quick resumable iteration run:
 
 ```powershell
+cd ..\hivebench
 .\.venv\Scripts\python -m experiments.generate_data --live --no-thinking --confidence off --max-convs 3 --max-turns 10
 ```
 
