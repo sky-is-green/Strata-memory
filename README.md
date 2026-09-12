@@ -210,7 +210,7 @@ the services around it:
 | Sieve | `strata/sieve/` | Small CPU "drone" encoders score every candidate (~5 ms/query, no GPU) |
 | Focal | `strata/focal/` | Adaptive budget, relevance floor + per-chunk share cap (P1-FLOOR), assembly into a bounded window |
 | Cortex | `strata/cortex/` | Routing, congestion control, PES health, checkpoint/resume, e2e engine |
-| Auditor | `strata/auditor/` | Asynchronous ground truth: labels whether the assembled context was sufficient, after each turn (the white paper's "queen" component) |
+| Auditor | `strata/auditor/` | Asynchronous ground truth: labels whether the assembled context was sufficient, after each turn (historical name: 'queen') |
 | MCP | `strata/mcp/` | `strata_search` / `strata_remember` tools on the sidecar; any MCP client (Studio, opencode, DSH) queries the same curated store |
 
 **Write-side hygiene is one pipeline.** Every chunk passes through
