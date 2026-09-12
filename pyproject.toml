@@ -22,27 +22,11 @@ dependencies = [
     "torch>=2.1.0",
 ]
 
-[project.optional-dependencies]
-# The system and harness install cleanly in layers:
-#   pip install strata-memory            # the system (drones + cortex + backends)
-#   pip install "strata-memory[harness]" # + the HiveBench Studio sidecar
-# The evaluation suite (HiveBench) is its own repo now — install it, and its
-# pytest/accelerate/datasets deps, from sky-is-green/hivebench.
-harness = [
-    "fastapi>=0.110",
-    "uvicorn>=0.29",
-    "pydantic>=2.12,<3",
-    "python-multipart>=0.0.9",
-]
-[project.scripts]
-hivebench-harness = "harness.__main__:main"
+# Package layout: single root, flat import names preserved —
+#   strata/ -> cortex, sieve, membrane, retention, focal, backend, auditor,
+#             locations, logs (strata.__init__ is the public facade).
+# The HiveBench Studio sidecar and the evaluation suite (tests/testing/
+# experiments) live in the sibling repo sky-is-green/hivebench.
 
-# Two package roots, flat import names preserved:
-#   strata/    -> cortex, sieve, membrane, retention, focal, backend, auditor,
-#                locations, logs (the system; strata.__init__ is the public
-#                facade — strata/ never imports from harness/)
-#   harness/   -> the HiveBench Studio sidecar (python -m harness)
-# The evaluation suite (tests/testing/experiments + its console scripts)
-# lives in the sibling repo sky-is-green/hivebench.
 [tool.setuptools.packages.find]
-where = ["strata", "harness"]
+where = ["strata"]
