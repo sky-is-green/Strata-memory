@@ -1,4 +1,4 @@
-# Strata-Memory / HiveBench
+# Strata-Memory
 
 [![CI](https://github.com/sky-is-green/strata-memory/actions/workflows/ci.yml/badge.svg)](https://github.com/sky-is-green/strata-memory/actions/workflows/ci.yml)
 
@@ -8,10 +8,10 @@ filtering, scoring, compressing, and reassembling conversation history into a
 bounded, high-relevance context window for every turn, so a generative model
 performs well over arbitrarily long conversations on consumer hardware.
 
-**HiveBench** is its evaluation suite: unit/integration/benchmark tests, a live
-benchmark harness, and the white paper's falsifiable predictions
-([P1-P11](STRATA-WHITE-PAPER.md#5-hypotheses-and-predictions)) with measured
-verdicts.
+**HiveBench**, its evaluation suite and Studio sidecar, lives in the dedicated [hivebench](https://github.com/sky-is-green/hivebench) repo:
+the white paper's falsifiable predictions
+([P1-P11](STRATA-WHITE-PAPER.md#5-hypotheses-and-predictions)) as executable tests with
+measured verdicts, an offline test suite, and the live benchmark harness.
 
 ## Quickstart
 
@@ -20,19 +20,13 @@ Requires Python 3.10+ and, for live runs, any OpenAI-compatible backend (LM Stud
 
 ```powershell
 git clone https://github.com/sky-is-green/strata-memory.git
-git clone https://github.com/sky-is-green/hivebench.git
 cd strata-memory
 python -m venv .venv
 .\.venv\Scripts\python -m pip install -e .   # the system: drones, cortex, retention, backends
-cd ..\hivebench
-python -m venv .venv
-.\.venv\Scripts\python -m pip install -e .   # suite + studio (console scripts)
-.\.venv\Scripts\python -m harness --setup   # from hivebench: copies providers config, probes backend, warms the drone
-.\.venv\Scripts\python -m harness           # studio UI on http://127.0.0.1:8765
 ```
 
 Linux/macOS: same in each checkout — `python3 -m venv .venv && .venv/bin/python -m pip install -e .`
-The Studio sidecar and the evaluation suite are no longer extras of this package — they live in the sibling `hivebench` repo (installed above); its README lists the console scripts.
+The Studio sidecar and the evaluation suite live in the sibling [hivebench](https://github.com/sky-is-green/hivebench) repo — its README covers install, `--setup`, suite runs, and live benchmarks.
 
 The full fresh-machine walkthrough (fixtures, live benchmark, troubleshooting)
 is `docs/INSTALL.md`; every claim below is reproduced by commands in these two checkouts.
@@ -107,49 +101,12 @@ while the unbounded history it replaces reaches 33,500+ tokens by turn 40.*
 
 ## Why HiveBench
 
-Most evaluation harnesses tell you how a model performs in a sandbox. HiveBench
-tells you *whether the context you feed the model is the reason it works*, and
-it does it deterministically, offline, and replayably:
-
-- **Falsifiable, not vibes.** The white paper's
-  [P1-P11 predictions](STRATA-WHITE-PAPER.md#5-hypotheses-and-predictions) ship as
-  executable tests with measured PASS/FAIL verdicts (§8). Every number in this
-  README is reproduced by a command in the repo.
-- **No LLM-as-judge circularity in the evidence path.** The deterministic
-  diagnostics score fact presence against fixture ground truth, stated-facts
-  recall, first-mention exclusion, hedge filtering. **The Strata auditor**, an
-  asynchronous ground-truth layer that labels, after each turn, whether the
-  assembled context was actually sufficient for the query, corroborates that
-  evidence; because it shares the served model's biases, it never constitutes
-  it (§9, Threat 1).
-- **The full test suite runs offline in ~30 seconds**: no LLM calls and no API
-  keys; CI-friendly via `--mock`. 599 tests: 546 unit, 53 integration,
-  plus live-gated MCP batteries (counts as of the 2026-09-12 pass). (Running the system *live*
-  does require a local model backend, LM Studio / llama.cpp, which on most
-  rigs means a GPU; the drones themselves stay on CPU.)
-- **Paired head-to-head A/B** (`hivebench-ab`): the same turns, the same model,
-  strata-curated context vs the naive FIFO window, both answers scored
-  deterministically (fixture-fact presence + context fidelity), with both
-  arms' stores replaying identical history so the comparison isolates
-  selection. The scoring path is unit-tested; interim live results are
-  recorded per run under `runs/`.
-- **Built for long evidence runs.** Checkpointed, resumable live runs survive
-  crashes and reboots:
-
-  ```powershell
-  cd ..\hivebench
-  .\.venv\Scripts\python -m experiments.paired_ab --live --model prism-ml/bonsai-27b --max-turns 45 --fifo-budget 1500 --checkpoint-every 2 --output runs/paired_ab.json
-  # killed mid-run? relaunch with --resume runs/paired_ab_trunc-style checkpoint,
-  # or let tools/resume_evidence.ps1 loop until the final report exists.
-  ```
-
-  One-command CLIs (`hivebench`, `hivebench-protocol`, `hivebench-diagnostic`,
-  …) wrap the rest — installed from the hivebench repo; suite commands run
-  from that checkout.
-- **Honest by design.** The suite surfaced its own failures first, the
-  measurement fixes that made PES trustworthy (latency floor, stated-facts
-  reframe, hedge poisoning) are documented in the paper's threats section
-  (§9), not hidden.
+Most evaluation harnesses tell you how a model performs in a sandbox. The
+hivebench suite — its own repo, checked out alongside this one — tells you *whether the context you feed the
+model is the reason it works*, deterministically, offline, and replayably: falsifiable P1-P11 predictions with
+measured PASS/FAIL verdicts (including its own failures), a ~30 s offline suite, paired A/B head-to-heads against
+the naive FIFO window, and an auditor that corroborates the evidence without constituting it. Rationale, run
+commands, and the live-benchmark guide are in the hivebench README.
 
 ## FAQ
 
@@ -194,8 +151,7 @@ policies, and composes with RAG rather than competing with it (white paper §2).
 | Path | Contents |
 |---|---|
 | `strata/` | The system: cortex (routing, PES, congestion, e2e), sieve (drones), retention (**hygiene**, store, decay, comb, remembrance), focal (budget/assembly), membrane (dedup/drift), backend (LM Studio / OpenAI-compat / vLLM), auditor (async ground truth), mcp (server + tools) |
-| sibling `../hivebench` | The evaluation suite — now its own repository ([sky-is-green/hivebench](https://github.com/sky-is-green/hivebench)), checked out alongside this one: `tests/`, `testing/`, `experiments/`, fixtures |
-| `harness/` | HiveBench Studio sidecar (FastAPI service over the strata; MCP server mounted here) |
+| sibling `../hivebench` | The evaluation suite + Studio sidecar — its own repository ([sky-is-green/hivebench](https://github.com/sky-is-green/hivebench)): `tests/`, `testing/`, `experiments/`, `harness/`, fixtures |
 | `docs/` | Install guide + integration guides (`INTEGRATE.md`: drop-in endpoint, Studio, DSH plugin, MCP) |
 
 ## What we have now
@@ -222,7 +178,7 @@ composite entry point (`prepare_for_storage`) is used by the store's write
 path and by the sidecar's payload-echo guard; that shared normalization is
 what makes recency-echo dedup compare like-for-like (RC2).
 
-**The sidecar** (`harness/`) exposes the system as a drop-in
+**The sidecar** (the `harness/` package in the sibling hivebench repo) exposes the system as a drop-in
 OpenAI-compatible endpoint with the Studio UI on `127.0.0.1:8765`; integration
 modes are in `docs/INTEGRATE.md`. Sidecar lifetime is bound to Studio
 (P1-LIFECYCLE): it starts when the studio starts and dies with it, zero
@@ -270,17 +226,17 @@ polling.
 | integration (hivebench repo) | pipeline end-to-end, incl. live-gated MCP suite | 53 tests |
 | Live batteries | paired A/B vs FIFO, protocol P1–P11 verdicts, MCP battery | recorded in white paper §8 and per-run reports |
 
-`cd ../hivebench && python -m pytest tests/unit -q` — ~25 s offline.
+Run from the sibling hivebench checkout: `python -m pytest tests/unit -q`, ~25 s offline (its README has the grouped runs).
 
 ## Use the system in your own project
 
 `strata/` is self-contained; it never imports from the bench or the harness:
 
 ```python
-from strata import Strata, HiveConfig, UltraSmallDrone, LMStudioBackend
+from strata import Strata, StrataConfig, UltraSmallDrone, LMStudioBackend
 
 strata = Strata(
-    config=HiveConfig(),
+    config=StrataConfig(),
     ultra=UltraSmallDrone(),
     backend=LMStudioBackend(base_url="http://localhost:1234"),
 )
@@ -288,35 +244,11 @@ result = strata.process_turn("what did we decide about auth?")
 print(result.reply)
 ```
 
-## Run the studio (HiveBench Studio)
+## Studio, test suite, and live runs
 
-The two commands from [Quickstart](#quickstart) run from the sibling `hivebench` checkout: `--setup`
-copies `providers.example.json` → `providers.local.json` if missing, probes for
-a reachable backend (LM Studio on `:1234`, or auto-starts the local
-`llama-server` from `models/gguf`), and prints the next step. The studio serves
-the strata over a FastAPI API, the endpoint contract lives in
-`..\hivebench/harness/harness/app.py`, and `docs/INTEGRATE.md` shows how to point external
-clients at it.
-
-## Run the test suite
-
-The suite lives in the sibling hivebench repo and runs from that checkout (offline; no LLM required):
-
-```powershell
-cd ..\hivebench
-.\.venv\Scripts\python -m pytest tests/unit -q   # ~25 s, every layer
-.\.venv\Scripts\python tests/run_hive_tests.py --group speed|intelligence|skills|maximum
-```
-
-## Try it live
-
-The live benchmark talks to an OpenAI-compatible backend (e.g. LM Studio on
-`localhost:1234`). A quick resumable iteration run:
-
-```powershell
-cd ..\hivebench
-.\.venv\Scripts\python -m experiments.generate_data --live --no-thinking --confidence off --max-convs 3 --max-turns 10
-```
+The Studio sidecar, the evaluation suite, and the live benchmark harness all
+live in the [hivebench](https://github.com/sky-is-green/hivebench) repo — its README has the install, `--setup`, suite-run, and resumable live-run commands
+(everything runs from that checkout).
 
 See `docs/INSTALL.md` for the full setup and run guide, and
 `STRATA-WHITE-PAPER.md` §8 for the measured-outcome table behind every claim.

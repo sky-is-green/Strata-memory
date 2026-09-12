@@ -2,16 +2,15 @@ name: CI
 
 on:
   push:
-    branches: [master]
+    branches: [StrataMemory-test]
   pull_request:
 
+# The evaluation suite (unit/integration) moved to the sibling hivebench repo;
+# this CI proves the system package itself installs clean and its facade
+# imports in a fresh environment.
 jobs:
   tests:
-    strategy:
-      fail-fast: false
-      matrix:
-        os: [ubuntu-latest, windows-latest]
-    runs-on: ${{ matrix.os }}
+    runs-on: ubuntu-latest
     timeout-minutes: 40
     steps:
       - uses: actions/checkout@v4
@@ -26,15 +25,7 @@ jobs:
         run: pip install torch --index-url https://download.pytorch.org/whl/cpu
 
       - name: Install package
-        run: pip install -e ".[harness,bench]"
+        run: pip install -e .
 
-      # Corpora are generated, not committed (docs/INSTALL.md step 4)
-      - name: Generate fixture corpora
-        run: |
-          python -m tests.fixtures.synthetic_conversations.generate
-          python -m tests.fixtures.synthetic_conversations.generate --prose --horizon --p9 --return-corpus
-
-      # Deterministic offline suite: unit + integration (perf benchmarks stay
-      # out of CI - threshold assertions flake on shared runners)
-      - name: Run offline test suite
-        run: python -m pytest hivebench/tests/unit hivebench/tests/integration -q
+      - name: Smoke test (facade import)
+        run: python -c "from strata import Strata, StrataConfig, UltraSmallDrone, LMStudioBackend; print('strata facade OK')"
