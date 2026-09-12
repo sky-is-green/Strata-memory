@@ -12,7 +12,8 @@ from focal.assembly import ContextAssembler
 from focal.budget import AdaptiveBudget
 from membrane.dedup import ContextDeduplicator
 from membrane.drift import TopicDriftDetector
-from retention.store import ContextStore, content_fingerprint
+from retention.store import ContextStore
+from retention.hygiene import content_fingerprint
 from sieve.scores import ChunkScore
 
 

@@ -15,13 +15,9 @@ from focal.assembly import ContextAssembler, normalize_for_scoring
 from focal.budget import AdaptiveBudget
 from membrane.dedup import ContextDeduplicator
 from membrane.drift import TopicDriftDetector
-from retention.filter import DEFAULT_INGEST_BLOCK_PREFIXES, strip_boilerplate
-from retention.store import (
-    ContextChunk,
-    ContextStore,
-    content_fingerprint,
-    sanitize_for_storage,
-)
+from retention.hygiene import DEFAULT_INGEST_BLOCK_PREFIXES, strip_boilerplate
+from retention.store import ContextChunk, ContextStore
+from retention.hygiene import content_fingerprint, sanitize_for_storage
 from sieve.scores import ChunkScore
 
 

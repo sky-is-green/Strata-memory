@@ -125,8 +125,8 @@ it does it deterministically, offline, and replayably:
   evidence; because it shares the served model's biases, it never constitutes
   it (§9, Threat 1).
 - **The full test suite runs offline in ~30 seconds**: no LLM calls and no API
-  keys; CI-friendly via `--mock`. 500+ tests grouped by what they measure
-  (`speed`, `intelligence`, `skills`, `maximum`). (Running the system *live*
+  keys; CI-friendly via `--mock`. 599 tests: 546 unit, 53 integration,
+  plus live-gated MCP batteries (counts as of the 2026-09-12 pass). (Running the system *live*
   does require a local model backend, LM Studio / llama.cpp, which on most
   rigs means a GPU; the drones themselves stay on CPU.)
 - **Paired head-to-head A/B** (`hivebench-ab`): the same turns, the same model,
@@ -193,10 +193,84 @@ policies, and composes with RAG rather than competing with it (white paper §2).
 
 | Path | Contents |
 |---|---|
-| `strata/` | The system: cortex (routing, PES, congestion), sieve (drones), retention, focal (budget/assembly), backend (LM Studio / OpenAI-compat), queen (async ground truth) |
-| `hivebench/` | The evaluation suite: `tests/` (grouped runner), `testing/` (A/B, ablation, shadow mode), `experiments/` (live benchmark, protocol, probes) |
-| `harness/` | HiveBench Studio sidecar (FastAPI service over the strata) |
-| `docs/` | Full-stack install guide + integration guides (OpenCode, dsh, your own harness) |
+| `strata/` | The system: cortex (routing, PES, congestion, e2e), sieve (drones), retention (**hygiene**, store, decay, comb, remembrance), focal (budget/assembly), membrane (dedup/drift), backend (LM Studio / OpenAI-compat / vLLM), queen (async ground truth), mcp (server + tools) |
+| `hivebench/` | The evaluation suite: `tests/` (unit/integration/benchmarks), `testing/` (A/B, ablation, MCP battery), `experiments/` (live benchmark, protocol, probes) |
+| `harness/` | HiveBench Studio sidecar (FastAPI service over the strata; MCP server mounted here) |
+| `docs/` | Install guide + integration guides (`INTEGRATE.md`: drop-in endpoint, Studio, DSH plugin, MCP) |
+
+## What we have now
+
+The pipeline per user turn — **Membrane → Retention → Sieve → Focal** — plus
+the services around it:
+
+| Layer | Module | Role |
+|---|---|---|
+| Membrane | `strata/membrane/` | Semantic dedup + topic-drift detection, before scoring |
+| Retention | `strata/retention/` | Chunk store with decay state, remembrance ladder, comb surplus tier (SSD archive) |
+| Sieve | `strata/sieve/` | Small CPU "drone" encoders score every candidate (~5 ms/query, no GPU) |
+| Focal | `strata/focal/` | Adaptive budget, relevance floor + per-chunk share cap (P1-FLOOR), assembly into a bounded window |
+| Cortex | `strata/cortex/` | Routing, congestion control, PES health, checkpoint/resume, e2e engine |
+| Queen | `strata/queen/` | Asynchronous ground truth: labels whether the assembled context was sufficient, after each turn |
+| MCP | `strata/mcp/` | `strata_search` / `strata_remember` tools on the sidecar; any MCP client (Studio, opencode, DSH) queries the same curated store |
+
+**Write-side hygiene is one pipeline.** Every chunk passes through
+`retention/hygiene.py` before fingerprinting: harness boilerplate stripped
+(P0) → secrets and base64 blobs redacted, length capped (U2) → 12-hex content
+fingerprint. Dedup groups the sanitized form, so every downstream tier —
+active store, checkpoints, comb archives — inherits clean data. The same
+composite entry point (`prepare_for_storage`) is used by the store's write
+path and by the sidecar's payload-echo guard; that shared normalization is
+what makes recency-echo dedup compare like-for-like (RC2).
+
+**The sidecar** (`harness/`) exposes the system as a drop-in
+OpenAI-compatible endpoint with the Studio UI on `127.0.0.1:8765`; integration
+modes are in `docs/INTEGRATE.md`. Sidecar lifetime is bound to Studio
+(P1-LIFECYCLE): it starts when the studio starts and dies with it, zero
+polling.
+
+## How we got here
+
+- **Launch state** — the white paper system: layered pipeline with P1–P11
+  measured on live runs (flagship `20260822_211131`).
+- **Integration wave (S1–S3)** — DSH Mode C plugin; MCP server on the sidecar
+  (`2c2b6f4`, `aac9019`); the MCP path made a tested feature, live battery:
+  recall/precision 95.4% at ~30 ms/query over 90 probes (Round 6).
+- **Corruption eradication** — the suite found harness control text, secrets,
+  and verbatim duplicate chunks leaking into persistent memory; fixed as a
+  stack, each fix fenced by tests: P0 ingest boilerplate filter + P1 payload
+  echo dedup (`2644cbd`); RC1 fingerprint guard for duplicates (`c9b2a58`,
+  `621f5c2`, `2154dd5`); RC2 shared normalization so scoring and payload
+  fingerprints compare like-for-like (`c9b2a58`; host-side trim `84bce97`);
+  P1-FLOOR relevance floor + per-chunk window-share cap (`b5b9e66`).
+- **P1-LIFECYCLE** — sidecar lifetime bound to Studio (`3bd8499`).
+- **This pass (2026-09-12)** — hygiene consolidation: the boilerplate filter
+  and U2 sanitizer merged into one `retention/hygiene.py` pipeline with a
+  single composite entry point shared by store writes and payload echo;
+  `filter.py` retired. Behavior-preserving: suite green before and after.
+
+## Where we're going
+
+- **Codec repair layer (next build)** — self-healing cp1252↔UTF-8 round-trip
+  transform for mojibake-corrupted chunks: strict normalization hooked into
+  `prepare_for_storage()` pre-fingerprint, read-boundary defense at context
+  assembly, one-time scrub of existing stores. Verification plan: idempotency,
+  false-positive guard on clean accented text, mojibake fixture round-trips,
+  dedup groups the repaired form, legacy poisoned chunks heal on read without
+  migration.
+- **S4/S5** — Studio provider row → sidecar (recall battery done; provider row
+  pending UI confirm); opencode provider config → sidecar with conversation id
+  = project name.
+- **P12** — store-time fact distillation (white paper, DRAFT, protocol only).
+
+## Tests and evidence
+
+| Suite | Covers | Current state |
+|---|---|---|
+| `hivebench/tests/unit` | every layer, offline, no LLM calls | 546 tests — 545 pass; 1 env-gated (host missing `zstandard`) |
+| `hivebench/tests/integration` | pipeline end-to-end, incl. live-gated MCP suite | 53 tests |
+| Live batteries | paired A/B vs FIFO, protocol P1–P11 verdicts, MCP battery | recorded in white paper §8 and per-run reports |
+
+`python -m pytest hivebench/tests/unit -q` — ~25 s offline.
 
 ## Use the system in your own project
 

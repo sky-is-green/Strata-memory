@@ -84,8 +84,12 @@ from harness.reports import (
     resolve_run_dir,
 )
 from logs.event_logger import EventLogger
-from retention.store import ContextStore, content_fingerprint, sanitize_for_storage
-from retention.filter import strip_boilerplate
+from retention.store import ContextStore
+from retention.hygiene import (
+    DEFAULT_MAX_CHUNK_CHARS,
+    content_fingerprint,
+    prepare_for_storage,
+)
 from strata.mcp.server import McpContext, handle_message
 from strata.mcp.tools import remember as mcp_remember
 from strata.mcp.tools import search as mcp_search
@@ -2163,18 +2167,14 @@ def create_app(
         body_msgs = messages[1:]
         if sum(len(str(m.get("content") or "")) for m in body_msgs) > _MAX_FWD_CHARS:
             body_msgs = body_msgs[-8:]
-        # Recency-echo guard: stored chunks verbatim-copied in the forwarded
-        # payload add zero new information; fingerprint those texts with the
-        # store's own fingerprint fn so assemble() can skip them before
-        # budget selection (gated by config dedup_against_payload).
-        # RC2: fingerprint the SAME normalized form the store persists
-        # (boilerplate-stripped + secret-sanitized with the conversation's own
-        # ingest settings) — raw payload text never matches a
-        # sanitized/truncated stored chunk, so those echoes used to escape
-        # echo-dedup forever.
+        # RC2: fingerprint the SAME normalized form the store persists —
+        # prepare_for_storage is the store's own write pipeline (boilerplate
+        # strip + secret sanitization with the conversation's own ingest
+        # settings), so sanitized/truncated stored chunks can no longer
+        # escape echo-dedup.
         _store = getattr(strata, "store", None)
         _prefixes = getattr(_store, "ingest_block_prefixes", None)
-        _max_chars = getattr(_store, "max_chunk_chars", None)
+        _max_chars = getattr(_store, "max_chunk_chars", None) or DEFAULT_MAX_CHUNK_CHARS
         payload_fingerprints = set()
         forwarded_texts = (
             ([system_msg] if system_msg is not None else []) + body_msgs
@@ -2183,14 +2183,9 @@ def create_app(
             text = m.get("content")
             if not isinstance(text, str) or not text:
                 continue
-            normalized = strip_boilerplate(text, _prefixes)
-            if not normalized or not normalized.strip():
-                continue
-            if _max_chars is not None:
-                normalized = sanitize_for_storage(normalized, _max_chars)
-            else:
-                normalized = sanitize_for_storage(normalized)
-            payload_fingerprints.add(content_fingerprint(normalized))
+            prepared = prepare_for_storage(text, _max_chars, _prefixes)
+            if prepared is not None:
+                payload_fingerprints.add(content_fingerprint(prepared))
         with st.lock_for(cid):
             result = strata.process_turn(
                 query, conversation_id=cid,

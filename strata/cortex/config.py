@@ -12,7 +12,7 @@ from pathlib import Path
 from typing import Optional
 
 from cortex.interop import GatekeeperSeam
-from retention.filter import DEFAULT_INGEST_BLOCK_PREFIXES
+from retention.hygiene import DEFAULT_INGEST_BLOCK_PREFIXES
 
 
 @dataclass
@@ -39,7 +39,7 @@ class StrataConfig:
     # anything reaches the store, checkpoints, or comb archives
     strip_secrets: bool = True
     max_chunk_chars: int = 4000
-    # Harness boilerplate blocklist (retention.filter.strip_boilerplate):
+    # Harness boilerplate blocklist (retention.hygiene.strip_boilerplate):
     # system-reminder control text the upstream harness injects around tool
     # calls must never become persistent chunks. Matched by normalized
     # prefix (first 80 chars, case-sensitive); [] disables the filter.

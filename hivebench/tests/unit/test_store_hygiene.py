@@ -6,11 +6,8 @@ content. Normal prose passes through byte-identical."""
 import pytest
 
 from cortex.config import StrataConfig
-from retention.store import (
-    DEFAULT_MAX_CHUNK_CHARS,
-    ContextStore,
-    sanitize_for_storage,
-)
+from retention.store import ContextStore
+from retention.hygiene import DEFAULT_MAX_CHUNK_CHARS, sanitize_for_storage
 
 
 # ---------------------------------------------------------------- patterns

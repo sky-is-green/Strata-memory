@@ -8,73 +8,17 @@ optional ``embed_fn`` provides embeddings lazily (used by dedup/assembly).
 from __future__ import annotations
 
 import hashlib
-import re
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from typing import Callable, Optional
 
 from cortex.baselines.metrics import now_iso
-from retention.filter import DEFAULT_INGEST_BLOCK_PREFIXES, strip_boilerplate
-
-# ---------------------------------------------------------------------------
-# Store-time hygiene (U2): credentials and oversized blobs must not reach the
-# persistent tiers (active store -> checkpoints -> comb SSD archives), where
-# they would survive indefinitely and be re-injected into future prompts.
-# Applied inside add_chunk(), BEFORE fingerprinting, so dedup groups the
-# sanitized form and every downstream consumer inherits clean data.
-# ---------------------------------------------------------------------------
-
-_SECRET_RULES = (
-    # OpenAI-style keys (sk- followed by 16+ key characters)
-    (re.compile(r"\bsk-[A-Za-z0-9_-]{16,}\b"), "[redacted-secret]"),
-    # GitHub tokens (ghp_/gho_/ghu_/ghs_/ghr_)
-    (re.compile(r"\bgh[pousr]_[A-Za-z0-9]{20,}\b"), "[redacted-secret]"),
-    # AWS access key IDs
-    (re.compile(r"\bAKIA[0-9A-Z]{16}\b"), "[redacted-secret]"),
-    # Bearer/Authorization header values (keep the label, drop the secret)
-    (
-        re.compile(
-            r"(?i)\b(authorization\s*[:=]\s*)bearer\s+[A-Za-z0-9._~+/=-]+"
-        ),
-        r"\1[redacted]",
-    ),
-    # key=value style assignments for common secret field names (quoted and
-    # bare forms; the quotes go with the redacted value)
-    (
-        re.compile(
-            r"(?i)\b(api[_-]?key|apikey|passwd|password|secret|token)"
-            r"(\s*[:=]\s*)(\"[^\"]{4,}\"|'[^']{4,}'|[^\s,;\"']{4,})"
-        ),
-        r"\1\2[redacted]",
-    ),
+from retention.hygiene import (
+    DEFAULT_INGEST_BLOCK_PREFIXES,
+    DEFAULT_MAX_CHUNK_CHARS,
+    content_fingerprint,
+    prepare_for_storage,
 )
-
-_BASE64_BLOB = re.compile(r"[A-Za-z0-9+/]{256,}={0,2}")
-
-TRUNCATION_MARK = "\n…[truncated]"
-DEFAULT_MAX_CHUNK_CHARS = 4000
-
-
-def content_fingerprint(text: str) -> str:
-    """12-hex content fingerprint shared by stored chunks and payload dedup.
-
-    Stored chunks (``ContextChunk.fingerprint``) and incoming request message
-    texts use this same function so verbatim copies compare equal.
-    """
-    return hashlib.md5(text.encode("utf-8")).hexdigest()[:12]
-
-
-def sanitize_for_storage(text: str, max_chars: int = DEFAULT_MAX_CHUNK_CHARS) -> str:
-    """Redact credential-shaped strings, collapse base64 blobs, and enforce a
-    hard length cap. Deterministic on normal prose: text without matches and
-    within ``max_chars`` passes through byte-identical."""
-    for pattern, replacement in _SECRET_RULES:
-        text = pattern.sub(replacement, text)
-    text = _BASE64_BLOB.sub("[base64 blob stripped]", text)
-    if len(text) > max_chars:
-        text = text[:max_chars] + TRUNCATION_MARK
-    return text
-
 
 @dataclass
 class ContextChunk:
@@ -131,14 +75,17 @@ class ContextStore:
         )
 
     def add_chunk(self, turn: int, content: str, chunk_id: Optional[str] = None) -> Optional[str]:
-        # Harness boilerplate (system-reminder control text) is never
-        # stored: drop blocked lines first so a fully-boilerplate turn
-        # stores zero chunks and a mixed turn keeps only the remainder.
-        content = strip_boilerplate(content, self.ingest_block_prefixes)
-        if not content or not content.strip():
+        # Write-side hygiene (retention.hygiene): boilerplate dropped and
+        # secrets/blobs redacted BEFORE fingerprinting, so dedup groups the
+        # sanitized form and every downstream tier inherits clean data. A
+        # fully-boilerplate turn stores zero chunks; a mixed turn keeps only
+        # the remainder.
+        content = prepare_for_storage(
+            content, self.max_chunk_chars, self.ingest_block_prefixes,
+            sanitize=self.sanitize,
+        )
+        if content is None:
             return None
-        if self.sanitize:
-            content = sanitize_for_storage(content, self.max_chunk_chars)
         fingerprint = content_fingerprint(content)
         # RC1 fingerprint guard: a chunk with the same (sanitized) fingerprint
         # already in the store is a verbatim duplicate — do NOT append a

@@ -6,7 +6,7 @@ context with stale instructions)."""
 from cortex.config import StrataConfig
 from cortex.e2e import FakeUltraSmall
 from cortex.strata import Strata
-from retention.filter import (
+from retention.hygiene import (
     DEFAULT_INGEST_BLOCK_PREFIXES,
     PREFIX_WINDOW,
     is_boilerplate_line,

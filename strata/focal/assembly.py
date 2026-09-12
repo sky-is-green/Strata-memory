@@ -25,7 +25,7 @@ from cortex.baselines.metrics import estimate_tokens
 from cortex.hedges import HEDGE_CONTRACTIONS
 from cortex.routing import RoutingDecision
 from retention.decay import DecayMatrix
-from retention.filter import strip_boilerplate
+from retention.hygiene import strip_boilerplate
 from retention.remembrance import RemembrancePass
 
 
