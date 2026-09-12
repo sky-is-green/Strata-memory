@@ -78,7 +78,6 @@ site-packages/
 *.ndjson
 
 # Benchmark & report outputs (generated)
-hivebench/benchmarks/results/
 reports/
 *.html
 
@@ -88,12 +87,6 @@ reports/
 
 # Generated test data (large synthetic conversations; regenerate via
 # python -m tests.fixtures.synthetic_conversations.generate [--prose|--horizon|--p9])
-hivebench/tests/fixtures/generated/
-hivebench/tests/fixtures/generated_prose/
-hivebench/tests/fixtures/generated_horizon/
-hivebench/tests/fixtures/generated_prose_horizon/
-hivebench/tests/fixtures/generated_p9/
-hivebench/tests/fixtures/generated_return/
 data/
 sample_data/
 

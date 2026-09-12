@@ -1,7 +1,8 @@
 ﻿# Installing HiveBench (system + benchmark + studio)
 
 Fresh-machine install of the full stack: the **strata-memory** system (`strata/`),
-the **HiveBench** evaluation suite (`hivebench/`), and the **HiveBench Studio**
+the **HiveBench** evaluation suite (sibling repo `../hivebench`,
+sky-is-green/hivebench), and the **HiveBench Studio**
 sidecar (`harness/`). ~5 minutes to a verified install.
 
 ## 1. Prerequisites
@@ -65,7 +66,7 @@ The benchmark and live runs need them:
 .\.venv\Scripts\python -m tests.fixtures.synthetic_conversations.generate --prose --horizon --p9 --return-corpus
 ```
 
-This writes `hivebench/tests/fixtures/generated*/`. Re-run any time you need a
+This writes `tests/fixtures/generated*/` in the hivebench checkout. Re-run any time you need a
 clean corpus.
 
 ## 5. Verify the install

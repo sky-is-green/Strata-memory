@@ -145,7 +145,8 @@ it does it deterministically, offline, and replayably:
   ```
 
   One-command CLIs (`hivebench`, `hivebench-protocol`, `hivebench-diagnostic`,
-  …) wrap the rest.
+  …) wrap the rest — installed from the hivebench repo; suite commands run
+  from that checkout.
 - **Honest by design.** The suite surfaced its own failures first, the
   measurement fixes that made PES trustworthy (latency floor, stated-facts
   reframe, hedge poisoning) are documented in the paper's threats section
@@ -194,7 +195,7 @@ policies, and composes with RAG rather than competing with it (white paper §2).
 | Path | Contents |
 |---|---|
 | `strata/` | The system: cortex (routing, PES, congestion, e2e), sieve (drones), retention (**hygiene**, store, decay, comb, remembrance), focal (budget/assembly), membrane (dedup/drift), backend (LM Studio / OpenAI-compat / vLLM), auditor (async ground truth), mcp (server + tools) |
-| `hivebench/` | The evaluation suite: `tests/` (unit/integration/benchmarks), `testing/` (A/B, ablation, MCP battery), `experiments/` (live benchmark, protocol, probes) |
+| sibling `../hivebench` | The evaluation suite — now its own repository ([sky-is-green/hivebench](https://github.com/sky-is-green/hivebench)), checked out alongside this one: `tests/`, `testing/`, `experiments/`, fixtures |
 | `harness/` | HiveBench Studio sidecar (FastAPI service over the strata; MCP server mounted here) |
 | `docs/` | Install guide + integration guides (`INTEGRATE.md`: drop-in endpoint, Studio, DSH plugin, MCP) |
 
@@ -266,11 +267,11 @@ polling.
 
 | Suite | Covers | Current state |
 |---|---|---|
-| `hivebench/tests/unit` | every layer, offline, no LLM calls | 546 tests — 545 pass; 1 env-gated (host missing `zstandard`) |
-| `hivebench/tests/integration` | pipeline end-to-end, incl. live-gated MCP suite | 53 tests |
+| unit (hivebench repo) | every layer, offline, no LLM calls | 546 tests — 545 pass; 1 env-gated (host missing `zstandard`) |
+| integration (hivebench repo) | pipeline end-to-end, incl. live-gated MCP suite | 53 tests |
 | Live batteries | paired A/B vs FIFO, protocol P1–P11 verdicts, MCP battery | recorded in white paper §8 and per-run reports |
 
-`python -m pytest hivebench/tests/unit -q` — ~25 s offline.
+`cd ../hivebench && python -m pytest tests/unit -q` — ~25 s offline.
 
 ## Use the system in your own project
 
