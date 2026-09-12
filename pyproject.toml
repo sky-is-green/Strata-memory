@@ -5,7 +5,7 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "strata-memory"
 version = "0.1.0"
-description = "Strata Memory — an external, multi-agent context-curation layer for long-horizon LLM conversations, plus the HiveBench evaluation suite"
+description = "Strata Memory — an external, multi-agent context-curation layer for long-horizon LLM conversations (HiveBench evaluation suite: sibling repo sky-is-green/hivebench)"
 readme = "README.md"
 requires-python = ">=3.10"
 dependencies = [
@@ -23,37 +23,26 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
-# The system, harness, and bench install cleanly in layers:
-#   pip install hive-memory            # the system (drones + cortex + backends)
-#   pip install "hive-memory[harness]" # + the HiveBench Studio sidecar
-#   pip install "hive-memory[bench]"   # + the evaluation suite (pytest + ST trainer)
+# The system and harness install cleanly in layers:
+#   pip install strata-memory            # the system (drones + cortex + backends)
+#   pip install "strata-memory[harness]" # + the HiveBench Studio sidecar
+# The evaluation suite (HiveBench) is its own repo now — install it, and its
+# pytest/accelerate/datasets deps, from sky-is-green/hivebench.
 harness = [
     "fastapi>=0.110",
     "uvicorn>=0.29",
     "pydantic>=2.12,<3",
     "python-multipart>=0.0.9",
 ]
-bench = [
-    "pytest>=8.0",
-    "accelerate>=1.1.0",
-    "datasets>=3.0",
-]
-
 [project.scripts]
-hivebench = "experiments.generate_data:main"
-hivebench-protocol = "experiments.run_p1_p10:main"
-hivebench-probe = "experiments.model_probe:main"
-hivebench-diagnostic = "experiments.retrieval_diagnostic:main"
-hivebench-gate-ab = "experiments.confirmation_gate_ab:main"
-hivebench-compare = "experiments.run_compare:main"
-hivebench-ab = "experiments.paired_ab:main"
 hivebench-harness = "harness.__main__:main"
 
-# Three package roots, flat import names preserved:
-#   hive/      -> cortex, sieve, membrane, retention, focal, backend, queen, logs
-#                (the system; hive.__init__ is the public facade — hive/ never
-#                 imports from hivebench/ or harness/)
-#   hivebench/ -> tests, testing, experiments
+# Two package roots, flat import names preserved:
+#   strata/    -> cortex, sieve, membrane, retention, focal, backend, auditor,
+#                locations, logs (the system; strata.__init__ is the public
+#                facade — strata/ never imports from harness/)
 #   harness/   -> the HiveBench Studio sidecar (python -m harness)
+# The evaluation suite (tests/testing/experiments + its console scripts)
+# lives in the sibling repo sky-is-green/hivebench.
 [tool.setuptools.packages.find]
-where = ["strata", "hivebench", "harness"]
+where = ["strata", "harness"]
