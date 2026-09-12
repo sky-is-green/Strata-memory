@@ -1,7 +1,7 @@
 """Strata Memory — the public facade of the context-curation system.
 
 ``strata/`` holds the flat packages (``cortex``, ``sieve``, ``membrane``,
-``retention``, ``focal``, ``backend``, ``queen``, ``logs``) that the bench and
+``retention``, ``focal``, ``backend``, ``auditor``, ``logs``) that the bench and
 harness import by name. This module is the *one import* for system integrators:
 
     from strata import Strata, StrataConfig, UltraSmallDrone, LMStudioBackend
