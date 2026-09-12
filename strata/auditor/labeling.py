@@ -13,7 +13,7 @@ override any ``*_auto`` field with a reviewed label.
 
 Usage::
 
-    python -m auditor.labeling --output hivebench/tests/fixtures/labels
+    python -m auditor.labeling --output <hivebench>/tests/fixtures/labels
 """
 
 from __future__ import annotations
@@ -25,8 +25,9 @@ import re
 from pathlib import Path
 
 from auditor.topics import TOPICS
+from locations import generated_fixtures_dir, labels_dir
 
-DEFAULT_LABEL_DIR = Path(__file__).resolve().parents[2] / "hivebench" / "tests" / "fixtures" / "labels"
+DEFAULT_LABEL_DIR = labels_dir()
 
 
 # ---------------------------------------------------------------------------
@@ -149,7 +150,7 @@ def generate_all(conversations, output_dir: Path) -> dict:
 
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description="Ground-truth labeling workflow")
-    parser.add_argument("--conversations", default="hivebench/tests/fixtures/generated")
+    parser.add_argument("--conversations", default=str(generated_fixtures_dir()))
     parser.add_argument("--output", default=str(DEFAULT_LABEL_DIR))
     args = parser.parse_args(argv)
 

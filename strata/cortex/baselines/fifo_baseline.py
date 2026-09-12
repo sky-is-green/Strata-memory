@@ -16,13 +16,14 @@ from pathlib import Path
 
 from cortex.baselines import metrics as m
 from cortex.baselines import runner
+from locations import generated_fixtures_dir
 
 
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description="Naive FIFO 4k-truncation baseline")
     parser.add_argument(
         "--conversations",
-        default="hivebench/tests/fixtures/generated",
+        default=str(generated_fixtures_dir()),
         help="directory of conversation JSON files",
     )
     parser.add_argument(

@@ -9,15 +9,16 @@ prefix for llama.cpp automatic prefix caching), and records per-turn metrics
 Usage::
 
     # Live run against LM Studio (must be running with a model loaded):
-    python -m cortex.e2e --conversation hivebench/tests/fixtures/generated/short_001.json
+    python -m cortex.e2e --conversation <hivebench>/tests/fixtures/generated/short_001.json
 
     # Offline verification of the harness (no backend / no model needed):
-    python -m cortex.e2e --conversation hivebench/tests/fixtures/generated/short_001.json --mock
+    python -m cortex.e2e --conversation <hivebench>/tests/fixtures/generated/short_001.json --mock
 """
 
 from __future__ import annotations
 
 import argparse
+from locations import generated_fixtures_dir
 import hashlib
 import json
 import sys
@@ -212,7 +213,7 @@ class EndToEndRunner:
 
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description="Strata end-to-end runner")
-    parser.add_argument("--conversation", default="hivebench/tests/fixtures/generated/short_001.json")
+    parser.add_argument("--conversation", default=str(generated_fixtures_dir() / "short_001.json"))
     parser.add_argument("--max-turns", type=int, default=None)
     parser.add_argument("--base-url", default="http://localhost:1234")
     parser.add_argument("--model", default="")
