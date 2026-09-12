@@ -2,7 +2,7 @@
 
 Answers the three questions that decide whether the comb can work, with the
 real default drone (paraphrase-MiniLM-L3-v2) and deterministic fixture ground
-truth (no queen):
+truth (no auditor):
 
   Q1 retrieval : on topic-return turns, does comb-style retrieval (lexical
                  pre-filter + drone ranking, as CombStore.retrieve does) put

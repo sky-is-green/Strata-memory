@@ -15,7 +15,7 @@ import experiments
 import focal
 import logs
 import membrane
-import queen
+import auditor
 import retention
 import sieve
 import testing
@@ -28,7 +28,7 @@ _PACKAGES = [
     retention,
     focal,
     backend,
-    queen,
+    auditor,
     logs,
     testing,
     experiments,

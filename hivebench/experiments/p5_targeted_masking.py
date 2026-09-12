@@ -32,7 +32,7 @@ from torch.optim import AdamW
 from transformers import BertForMaskedLM, BertTokenizer
 
 from cortex.baselines.runner import load_conversations
-from queen.labeling import generate_query_chunk_pairs
+from auditor.labeling import generate_query_chunk_pairs
 from sieve.vocabulary import Vocabulary
 
 DEFAULT_MODEL = "prajjwal1/bert-tiny"

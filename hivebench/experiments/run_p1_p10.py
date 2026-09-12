@@ -2,8 +2,8 @@
 
 Runs the white paper's falsifiable predictions against the built pipeline and
 reports PASS / FAIL / SKIP with evidence for each. Works end-to-end offline in
-``--mock`` mode (fake drone + mock backend + mock queen) and against a live LM
-Studio backend when ``--live`` (backend + real all-MiniLM drone + LLM queen).
+``--mock`` mode (fake drone + mock backend + mock auditor) and against a live LM
+Studio backend when ``--live`` (backend + real all-MiniLM drone + LLM auditor).
 
 Predictions P5 (needs the targeted-masking training run, experiments.p5_*) and
 P7 (needs human raters) are reported as SKIP with pointers.
@@ -36,8 +36,8 @@ from focal.assembly import ContextAssembler
 from focal.budget import AdaptiveBudget
 from membrane.dedup import ContextDeduplicator
 from membrane.drift import TopicDriftDetector
-from queen.queen import Queen
-from queen.labeling import generate_all, generate_eviction_labels, generate_query_chunk_pairs, generate_routing_decision_labels
+from auditor.auditor import Auditor
+from auditor.labeling import generate_all, generate_eviction_labels, generate_query_chunk_pairs, generate_routing_decision_labels
 from retention.store import ContextStore
 from sieve.medium import MediumDrone
 from sieve.ultra_small import UltraSmallDrone
@@ -65,14 +65,14 @@ class _P4FixedBudget:
 
 
 class PredictionSuite:
-    def __init__(self, backend, ultra, medium, conversations, labels, queen,
+    def __init__(self, backend, ultra, medium, conversations, labels, auditor,
                  live=False, sampling: dict | None = None):
         self.backend = backend
         self.ultra = ultra
         self.medium = medium
         self.conversations = conversations
         self.labels = labels
-        self.queen = queen  # Queen
+        self.auditor = auditor  # Auditor
         self.live = live
         self.sampling = sampling or {}
         self.assembler = ContextAssembler()
@@ -203,7 +203,7 @@ class PredictionSuite:
 
     def p3(self):
         """Context sufficiency: strata-selected context >= FIFO window on >=80% of
-        turns, measured deterministically (no LLM queen).
+        turns, measured deterministically (no LLM auditor).
 
         Sufficiency is the *fact-presence* test the deterministic P2 diagnostic
         uses: a turn's context is sufficient when it contains the fixture
@@ -510,7 +510,7 @@ class PredictionSuite:
 
     def p7(self):
         return PredictionResult(
-            "P7", "Queen-human label agreement >=90%", "SKIP", {},
+            "P7", "Auditor-human label agreement >=90%", "SKIP", {},
             "measured live via experiments.human_label (single human rater "
             "protocol, 500 items): 90.25% agreement on the 400 valid items "
             "(2026-08-23); rerun with a fresh rater to re-measure",
@@ -532,7 +532,7 @@ class PredictionSuite:
         return PredictionResult(
             "P8", "Routing accuracy", "PASS" if ok else "FAIL",
             {"accuracy": round(acc, 3), "correct": correct, "total": len(decisions)},
-            "optimal labels are heuristic-proxy; real queen labels would be stricter",
+            "optimal labels are heuristic-proxy; real auditor labels would be stricter",
         )
 
     def p9(self):
@@ -564,7 +564,7 @@ class PredictionSuite:
     def p10(self):
         """Drift reset accelerates recovery within 3 turns of a topic change.
 
-        Deterministic (no queen): injects the fixture's real topic switches
+        Deterministic (no auditor): injects the fixture's real topic switches
         (long conversations contain 4 topics in sequence), and measures
         answer-fact survival in the assembled context for the 3 turns after each
         switch, with the drift detector forced to fire (threshold 0.1, verified
@@ -622,7 +622,7 @@ class PredictionSuite:
           3. no crowding: full-replay non-return (filler) recall unchanged
           4. beats keep-last-N (recency window) in the pressure regime
 
-        Ground truth is the fixture's own answers (deterministic, no queen);
+        Ground truth is the fixture's own answers (deterministic, no auditor);
         fact-presence uses the P2 rule (>= 50% of the answer's fact terms in
         the assembled context), scored only on turns whose facts exist in
         prior history (first mentions excluded).
@@ -1001,11 +1001,11 @@ def main(argv: list[str] | None = None) -> int:
         live = True
 
     medium = MediumDrone(score_pair_fn=lambda q, c: 0.5)
-    queen = Queen(generate_fn=lambda p: json.dumps({"sufficient": True, "used_pieces": [], "missing": [], "score": 4}))
+    auditor = Auditor(generate_fn=lambda p: json.dumps({"sufficient": True, "used_pieces": [], "missing": [], "score": 4}))
     sampling = parse_sampling(args.sampling) if args.sampling else None
 
     suite = PredictionSuite(backend, ultra, medium, conversations, labels,
-                            queen, live=live, sampling=sampling)
+                            auditor, live=live, sampling=sampling)
     results = suite.run()
 
     out = Path(args.output) if args.output else Path("logs") / "p1_p10_report.json"

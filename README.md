@@ -119,7 +119,7 @@ it does it deterministically, offline, and replayably:
   README is reproduced by a command in the repo.
 - **No LLM-as-judge circularity in the evidence path.** The deterministic
   diagnostics score fact presence against fixture ground truth, stated-facts
-  recall, first-mention exclusion, hedge filtering. **The Strata queen**, an
+  recall, first-mention exclusion, hedge filtering. **The Strata auditor**, an
   asynchronous ground-truth layer that labels, after each turn, whether the
   assembled context was actually sufficient for the query, corroborates that
   evidence; because it shares the served model's biases, it never constitutes
@@ -193,7 +193,7 @@ policies, and composes with RAG rather than competing with it (white paper §2).
 
 | Path | Contents |
 |---|---|
-| `strata/` | The system: cortex (routing, PES, congestion, e2e), sieve (drones), retention (**hygiene**, store, decay, comb, remembrance), focal (budget/assembly), membrane (dedup/drift), backend (LM Studio / OpenAI-compat / vLLM), queen (async ground truth), mcp (server + tools) |
+| `strata/` | The system: cortex (routing, PES, congestion, e2e), sieve (drones), retention (**hygiene**, store, decay, comb, remembrance), focal (budget/assembly), membrane (dedup/drift), backend (LM Studio / OpenAI-compat / vLLM), auditor (async ground truth), mcp (server + tools) |
 | `hivebench/` | The evaluation suite: `tests/` (unit/integration/benchmarks), `testing/` (A/B, ablation, MCP battery), `experiments/` (live benchmark, protocol, probes) |
 | `harness/` | HiveBench Studio sidecar (FastAPI service over the strata; MCP server mounted here) |
 | `docs/` | Install guide + integration guides (`INTEGRATE.md`: drop-in endpoint, Studio, DSH plugin, MCP) |
@@ -210,7 +210,7 @@ the services around it:
 | Sieve | `strata/sieve/` | Small CPU "drone" encoders score every candidate (~5 ms/query, no GPU) |
 | Focal | `strata/focal/` | Adaptive budget, relevance floor + per-chunk share cap (P1-FLOOR), assembly into a bounded window |
 | Cortex | `strata/cortex/` | Routing, congestion control, PES health, checkpoint/resume, e2e engine |
-| Queen | `strata/queen/` | Asynchronous ground truth: labels whether the assembled context was sufficient, after each turn |
+| Auditor | `strata/auditor/` | Asynchronous ground truth: labels whether the assembled context was sufficient, after each turn (the white paper's "queen" component) |
 | MCP | `strata/mcp/` | `strata_search` / `strata_remember` tools on the sidecar; any MCP client (Studio, opencode, DSH) queries the same curated store |
 
 **Write-side hygiene is one pipeline.** Every chunk passes through

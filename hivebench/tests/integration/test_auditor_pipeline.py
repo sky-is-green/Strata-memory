@@ -1,4 +1,4 @@
-"""Integration: S4 queen roundtrip and A/B testing with the real assembler."""
+"""Integration: S4 auditor roundtrip and A/B testing with the real assembler."""
 
 import json
 
@@ -9,8 +9,8 @@ from focal.assembly import ContextAssembler
 from focal.budget import AdaptiveBudget
 from membrane.dedup import ContextDeduplicator
 from membrane.drift import TopicDriftDetector
-from queen.queen import Queen, TurnRecord
-from queen.ground_truth import GroundTruthDB
+from auditor.auditor import Auditor, TurnRecord
+from auditor.ground_truth import GroundTruthDB
 from retention.store import ContextStore
 from sieve.scores import ChunkScore
 from testing.ab_test import ABTestRunner
@@ -74,7 +74,7 @@ def test_ab_test_full_vs_tiny_budget_real_assembler():
     assert result.config_a_metrics["pes"] > result.config_b_metrics["pes"]
 
 
-def test_queen_to_ground_truth_roundtrip():
+def test_auditor_to_ground_truth_roundtrip():
     assembler = ContextAssembler()
     store = _store()
     assembled = assembler.assemble(
@@ -85,12 +85,12 @@ def test_queen_to_ground_truth_roundtrip():
         budget=AdaptiveBudget(), max_context=8192,
     )
 
-    queen = Queen(
+    auditor = Auditor(
         generate_fn=lambda p: json.dumps(
             {"sufficient": True, "used_pieces": [], "missing": [], "score": 4}
         )
     )
-    label = queen.evaluate_turn(
+    label = auditor.evaluate_turn(
         TurnRecord(
             turn=1, assembled_context=assembled.content, user_query="q",
             llm_response="r", chunk_ids=assembled.selected_chunk_ids,
@@ -100,8 +100,8 @@ def test_queen_to_ground_truth_roundtrip():
 
     db = GroundTruthDB()
     for cid in assembled.selected_chunk_ids:
-        # queen says every selected chunk was relevant
-        db.record_queen_label(1, cid, True, bool(label.chunk_labels.get(cid, True)))
+        # auditor says every selected chunk was relevant
+        db.record_auditor_label(1, cid, True, bool(label.chunk_labels.get(cid, True)))
     assert 0.0 <= db.retrieval_precision() <= 100.0
     assert db.label_count() == len(assembled.selected_chunk_ids)
     db.close()

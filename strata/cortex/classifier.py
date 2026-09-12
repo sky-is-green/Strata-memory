@@ -1,6 +1,6 @@
 """Lightweight routing classifier (S4.6).
 
-Trained offline on logged routing decisions + queen labels; replaces heuristic
+Trained offline on logged routing decisions + auditor labels; replaces heuristic
 routing at runtime. A shallow decision tree (<10MB, <20ms inference) is small
 enough to load at startup and fast enough for the hot path.
 """

@@ -23,10 +23,10 @@ OUTPUT_DIR = Path(__file__).resolve().parents[1] / "generated"
 
 # ---------------------------------------------------------------------------
 # Domain content: per-topic feature + decisions (facts) that turn templates use.
-# The topic table lives in the system (queen.topics) so strata/ never imports
+# The topic table lives in the system (auditor.topics) so strata/ never imports
 # from the bench; it is re-exported here for backward compatibility.
 # ---------------------------------------------------------------------------
-from queen.topics import TOPICS  # noqa: E402
+from auditor.topics import TOPICS  # noqa: E402
 
 CODE_SNIPPETS = [
     "def handle_{feat}():\n    return {{\"ok\": True}}\n",

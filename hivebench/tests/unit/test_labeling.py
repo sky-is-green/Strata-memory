@@ -1,7 +1,7 @@
-"""Unit tests for queen.labeling (ground-truth labeling workflow)."""
+"""Unit tests for auditor.labeling (ground-truth labeling workflow)."""
 
 from cortex.baselines.runner import load_conversations
-from queen.labeling import (
+from auditor.labeling import (
     generate_eviction_labels,
     generate_query_chunk_pairs,
     generate_routing_decision_labels,

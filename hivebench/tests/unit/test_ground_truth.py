@@ -1,8 +1,8 @@
-"""Unit tests for queen.ground_truth (S4.2)."""
+"""Unit tests for auditor.ground_truth (S4.2)."""
 
 import pytest
 
-from queen.ground_truth import GroundTruthDB
+from auditor.ground_truth import GroundTruthDB
 
 
 @pytest.fixture
@@ -14,10 +14,10 @@ def db():
 
 def test_precision_recall_false_eviction_hand_computed(db):
     # A: TP, B: FP, C: FN(evicted-need), D: TN
-    db.record_queen_label(1, "A", True, True)
-    db.record_queen_label(1, "B", True, False)
-    db.record_queen_label(1, "C", False, True)
-    db.record_queen_label(1, "D", False, False)
+    db.record_auditor_label(1, "A", True, True)
+    db.record_auditor_label(1, "B", True, False)
+    db.record_auditor_label(1, "C", False, True)
+    db.record_auditor_label(1, "D", False, False)
 
     assert db.retrieval_precision() == 50.0   # 1/2
     assert db.retrieval_recall() == 50.0      # 1/2
@@ -33,9 +33,9 @@ def test_empty_db_returns_zero(db):
 
 def test_window_limits_queries(db):
     for _ in range(50):
-        db.record_queen_label(1, "x", True, True)   # all correct
+        db.record_auditor_label(1, "x", True, True)   # all correct
     for _ in range(50):
-        db.record_queen_label(1, "x", False, False)  # all evicted-correctly
+        db.record_auditor_label(1, "x", False, False)  # all evicted-correctly
     assert db.retrieval_precision() == 100.0
     # within a window of 50 of the most recent (the evicted ones) -> 0 precision
     assert db.retrieval_precision(window=50) == 0.0
@@ -59,7 +59,7 @@ def test_10000_labels_performant(db):
 
     start = time.perf_counter()
     for i in range(10000):
-        db.record_queen_label(i % 100, "c", bool(i % 2), bool(i % 3))
+        db.record_auditor_label(i % 100, "c", bool(i % 2), bool(i % 3))
     elapsed = time.perf_counter() - start
     assert db.label_count() == 10000
     assert elapsed < 5.0  # plenty of headroom for 10k inserts

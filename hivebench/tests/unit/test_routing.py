@@ -32,7 +32,7 @@ COMPLEX_QUERIES = [
     "design and audit the checkpoint system",
     "review and optimize the embedding cache",
     "compare and design the drone fleet",
-    "analyze the queen and explain the ground truth labels",
+    "analyze the auditor and explain the ground truth labels",
     "refactor and debug the context assembler",
     "optimize and review the congestion detector",
     "design, debug, and analyze the full pipeline",

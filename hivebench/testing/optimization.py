@@ -5,7 +5,7 @@ GroundTruthDB that re-simulates the component under the candidate) and return
 the candidate minimizing (or maximizing) it. An explicit ``objective`` can be
 injected for offline/unit tests.
 
-- ``optimize_decay``: replays the decay pass over stored queen labels — each
+- ``optimize_decay``: replays the decay pass over stored auditor labels — each
   candidate multiplier changes which chunks are predicted-kept, trading
   false-evictions against context bloat.
 - ``optimize_routing_threshold``: replays the medium-tier assignment over stored
@@ -48,14 +48,14 @@ def sweep(
 # Replay helpers
 # ---------------------------------------------------------------------------
 def replay_decay(db, multiplier: float) -> tuple[float, float]:
-    """Re-simulate the decay pass under *multiplier* over stored queen labels.
+    """Re-simulate the decay pass under *multiplier* over stored auditor labels.
 
     Returns ``(false_eviction_rate, keep_rate)``. Age is derived from each
     label's turn (oldest chunks decay most); a chunk is predicted-kept when its
     decayed score exceeds DECAY_KEEP_THRESHOLD.
     """
     rows = db._conn.execute(
-        "SELECT turn, actually_relevant, score FROM queen_labels"
+        "SELECT turn, actually_relevant, score FROM auditor_labels"
     ).fetchall()
     if not rows:
         return 0.0, 0.0

@@ -20,7 +20,7 @@ Encoders (--encoder):
   checkpoint:PATH            a trained SentenceTransformer checkpoint (B2/B3)
 
 Pair sources (--pairs):
-  fixture                    hivebench/tests/fixtures/generated + queen.labeling (standard test set)
+  fixture                    hivebench/tests/fixtures/generated + auditor.labeling (standard test set)
   live:RUN_DIR               reconstruct conversations from a run_report.json and label
                              with the same topic machinery (temporal-split source, B3)
   json:FILE                  a saved pairs file
@@ -46,7 +46,7 @@ from pathlib import Path
 
 import numpy as np
 
-from queen.labeling import generate_query_chunk_pairs
+from auditor.labeling import generate_query_chunk_pairs
 from experiments.retrieval_diagnostic import (_answer_fact_terms,
                                               _content_terms,
                                               _fixture_answer_map)

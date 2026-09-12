@@ -1,9 +1,9 @@
-"""P7 human-labeling tool (whitepaper Queen-Agreement Hypothesis).
+"""P7 human-labeling tool (whitepaper Auditor-Agreement Hypothesis).
 
-P7's measurement: LLM-as-queen relevance labels (framed as context-utilization
+P7's measurement: LLM-as-auditor relevance labels (framed as context-utilization
 questions) must agree with human labels on >=90% of a sample, and human-human
-agreement must be >= queen-human agreement. This tool provides the human side
-(and the queen side) of that protocol.
+agreement must be >= auditor-human agreement. This tool provides the human side
+(and the auditor side) of that protocol.
 
 Workflow (all subcommands against the same item set):
 
@@ -12,12 +12,12 @@ Workflow (all subcommands against the same item set):
     2. rate     — the human labels: a Tkinter app, keyboard-driven
                   (1=relevant 2=not 3=uncertain), auto-saves every answer to
                   NDJSON (crash-safe, resumable). A --cli fallback exists.
-    3. queen   — label the same items with the LLM queen (LM Studio backend)
+    3. auditor   — label the same items with the LLM auditor (LM Studio backend)
                   using the utilization framing.
-    4. agree    — compute queen-human and human-human agreement (P7 verdict).
+    4. agree    — compute auditor-human and human-human agreement (P7 verdict).
 
 Item semantics: given the user query, is this chunk of the conversation
-relevant to answering it? (The queen version asks "was this context used /
+relevant to answering it? (The auditor version asks "was this context used /
 would it help" — the utilization framing that avoids the parametric-knowledge
 confound.)
 
@@ -25,8 +25,8 @@ Usage::
 
     python -m experiments.human_label sample --n 500 --out models/p7/items.json
     python -m experiments.human_label rate  --items models/p7/items.json --out models/p7/human_raterA.ndjson
-    python -m experiments.human_label queen --items models/p7/items.json --out models/p7/queen.ndjson
-    python -m experiments.human_label agree  --items models/p7/items.json --human models/p7/human_raterA.ndjson --queen models/p7/queen.ndjson
+    python -m experiments.human_label auditor --items models/p7/items.json --out models/p7/auditor.ndjson
+    python -m experiments.human_label agree  --items models/p7/items.json --human models/p7/human_raterA.ndjson --auditor models/p7/auditor.ndjson
 """
 
 from __future__ import annotations
@@ -38,7 +38,7 @@ import statistics
 import sys
 from pathlib import Path
 
-from queen.labeling import generate_query_chunk_pairs
+from auditor.labeling import generate_query_chunk_pairs
 
 HIVEBENCH_ROOT = Path(__file__).resolve().parents[1]
 LIVE_RUNS = ["runs/20260822_211131", "runs/20260822_live2", "runs/20260822_live3"]
@@ -95,7 +95,7 @@ def build_items(n: int, seed: int, live_share: float = 0.6,
     ``relevant_gold`` is the deterministic label (fact-term/topic overlap) —
     shown to the human AFTER they answer, as calibration feedback, and used by
     ``agree`` only for the human-vs-deterministic diagnostic (P7's verdict is
-    queen-vs-human, which is blind to gold).
+    auditor-vs-human, which is blind to gold).
 
     With ``subchunk=True`` the chunks are sentence/paragraph units of the
     stored replies instead of whole replies — the granularity experiment
@@ -419,7 +419,7 @@ def rate_cli(rater: HumanRater, items: list[dict]) -> int:
 
 
 # ---------------------------------------------------------------------------
-# Queen side: label the same items with the utilization framing
+# Auditor side: label the same items with the utilization framing
 # ---------------------------------------------------------------------------
 QUEEN_PAIR_PROMPT = """You are evaluating whether a context chunk was relevant to answering a user's question.
 
@@ -435,9 +435,9 @@ Answer ONLY in this JSON shape:
 {{"relevant": true, "reason": "..."}}"""
 
 
-def run_queen(items: list[dict], out: Path, base_url: str, model: str,
+def run_auditor(items: list[dict], out: Path, base_url: str, model: str,
                generate_fn=None) -> int:
-    """Label items with the LLM queen. ``generate_fn`` injectable for tests;
+    """Label items with the LLM auditor. ``generate_fn`` injectable for tests;
     default uses LM Studio (OpenAI-compatible) via requests."""
     import json as _json
     import requests
@@ -461,21 +461,21 @@ def run_queen(items: list[dict], out: Path, base_url: str, model: str,
         resp.raise_for_status()
         return resp.json()["choices"][0]["message"]["content"]
 
-    from queen.queen import Queen
+    from auditor.auditor import Auditor
 
-    queen = Queen(gen)
+    auditor = Auditor(gen)
     remaining = [it for it in items if it["item_id"] not in results]
-    print(f"queen: {len(results)} already labeled, {len(remaining)} to go")
+    print(f"auditor: {len(results)} already labeled, {len(remaining)} to go")
     for i, item in enumerate(remaining, 1):
         prompt = QUEEN_PAIR_PROMPT.format(query=item["query"], chunk=item["chunk"])
         try:
-            parsed = queen._extract_json(gen(prompt))
+            parsed = auditor._extract_json(gen(prompt))
             if parsed is None:
                 label = 3  # unparseable -> uncertain
             else:
                 label = 1 if bool(parsed.get("relevant")) else 2
         except Exception as exc:  # network/parse failure -> uncertain, keep going
-            print(f"  item {i}/{len(remaining)} queen error: {exc}")
+            print(f"  item {i}/{len(remaining)} auditor error: {exc}")
             label = 3
         rec = {"item_id": item["item_id"], "label": label, "query": item["query"],
                "chunk": item["chunk"]}
@@ -483,8 +483,8 @@ def run_queen(items: list[dict], out: Path, base_url: str, model: str,
             f.write(json.dumps(rec) + "\n")
         results[item["item_id"]] = rec
         if i % 10 == 0:
-            print(f"  queen progress: {i}/{len(remaining)}")
-    print(f"queen done: {len(results)} labels -> {out}")
+            print(f"  auditor progress: {i}/{len(remaining)}")
+    print(f"auditor done: {len(results)} labels -> {out}")
     return 0
 
 
@@ -500,10 +500,10 @@ def _load_labels(path: Path) -> dict[str, int]:
     return out
 
 
-def compute_agreement(items: list[dict], human: Path, queen: Path,
+def compute_agreement(items: list[dict], human: Path, auditor: Path,
                       human2: Path | None = None) -> dict:
     h1 = _load_labels(human)
-    o = _load_labels(queen)
+    o = _load_labels(auditor)
     h2 = _load_labels(human2) if human2 is not None else {}
     ids = [it["item_id"] for it in items]
     # Degenerate fixture queries ("X fit with X") are not real questions:
@@ -534,15 +534,15 @@ def compute_agreement(items: list[dict], human: Path, queen: Path,
     verdict = "FAIL"
     reasons = []
     if oa is None or oa < 0.90:
-        reasons.append(f"queen-human agreement {oa if oa is not None else 'n/a'} < 90%")
+        reasons.append(f"auditor-human agreement {oa if oa is not None else 'n/a'} < 90%")
     if hh is not None and oa is not None and hh < oa:
-        reasons.append(f"human-human {hh:.1%} < queen-human {oa:.1%}")
+        reasons.append(f"human-human {hh:.1%} < auditor-human {oa:.1%}")
     if not reasons:
         verdict = "PASS"
 
     return {
-        "queen_human_agreement": round(oa, 4) if oa is not None else None,
-        "queen_human_n": oh_n,
+        "auditor_human_agreement": round(oa, 4) if oa is not None else None,
+        "auditor_human_n": oh_n,
         "human_human_agreement": round(hh, 4) if hh is not None else None,
         "verdict": verdict,
         "reasons": reasons,
@@ -577,16 +577,16 @@ def main(argv: list[str] | None = None) -> int:
     p.add_argument("--out", required=True)
     p.add_argument("--cli", action="store_true", help="terminal fallback")
 
-    p = sub.add_parser("queen", help="label items with the LLM queen")
+    p = sub.add_parser("auditor", help="label items with the LLM auditor")
     p.add_argument("--items", required=True)
-    p.add_argument("--out", default="models/p7/queen.ndjson")
+    p.add_argument("--out", default="models/p7/auditor.ndjson")
     p.add_argument("--base-url", default="http://localhost:1234")
     p.add_argument("--model", default="prism-ml/bonsai-27b")
 
     p = sub.add_parser("agree", help="P7 agreement verdict")
     p.add_argument("--items", required=True)
     p.add_argument("--human", required=True)
-    p.add_argument("--queen", required=True)
+    p.add_argument("--auditor", required=True)
     p.add_argument("--human2", default=None)
 
     args = ap.parse_args(argv)
@@ -616,13 +616,13 @@ def main(argv: list[str] | None = None) -> int:
         print(f"saved to {args.out}")
         return 0
 
-    if args.cmd == "queen":
+    if args.cmd == "auditor":
         items = json.loads(Path(args.items).read_text(encoding="utf-8"))
-        return run_queen(items, Path(args.out), args.base_url, args.model)
+        return run_auditor(items, Path(args.out), args.base_url, args.model)
 
     if args.cmd == "agree":
         items = json.loads(Path(args.items).read_text(encoding="utf-8"))
-        res = compute_agreement(items, Path(args.human), Path(args.queen),
+        res = compute_agreement(items, Path(args.human), Path(args.auditor),
                                 Path(args.human2) if args.human2 else None)
         print(json.dumps(res, indent=2))
         return 0

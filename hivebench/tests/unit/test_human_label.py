@@ -5,7 +5,7 @@ import json
 import pytest
 
 from experiments.human_label import (HumanRater, build_items, compute_agreement,
-                                     run_queen)
+                                     run_auditor)
 
 
 def test_build_items_balanced_and_seeded():
@@ -53,56 +53,56 @@ def test_human_rater_resumes(tmp_path):
 def test_agreement_pass_and_fail(tmp_path):
     items = build_items(20, seed=7)
     human = tmp_path / "h.ndjson"
-    queen = tmp_path / "o.ndjson"
+    auditor = tmp_path / "o.ndjson"
     r = HumanRater(items, human)
     for it in items:
         r.answer(it, 1 if it["relevant_gold"] else 2)
-    # queen agrees perfectly -> PASS
-    with queen.open("w", encoding="utf-8") as f:
+    # auditor agrees perfectly -> PASS
+    with auditor.open("w", encoding="utf-8") as f:
         for it in items:
             f.write(json.dumps(
                 {"item_id": it["item_id"], "label": 1 if it["relevant_gold"] else 2}) + "\n")
-    res = compute_agreement(items, human, queen)
+    res = compute_agreement(items, human, auditor)
     assert res["verdict"] == "PASS"
-    assert res["queen_human_agreement"] == 1.0
-    # queen disagrees on everything -> FAIL below 90%
-    with queen.open("w", encoding="utf-8") as f:
+    assert res["auditor_human_agreement"] == 1.0
+    # auditor disagrees on everything -> FAIL below 90%
+    with auditor.open("w", encoding="utf-8") as f:
         for it in items:
             f.write(json.dumps(
                 {"item_id": it["item_id"], "label": 2 if it["relevant_gold"] else 1}) + "\n")
-    res = compute_agreement(items, human, queen)
+    res = compute_agreement(items, human, auditor)
     assert res["verdict"] == "FAIL"
     assert "90%" in res["reasons"][0]
 
 
-def test_human_human_below_queen_human_fails(tmp_path):
+def test_human_human_below_auditor_human_fails(tmp_path):
     items = build_items(20, seed=7)
     human = tmp_path / "h.ndjson"
     human2 = tmp_path / "h2.ndjson"
-    queen = tmp_path / "o.ndjson"
+    auditor = tmp_path / "o.ndjson"
     r = HumanRater(items, human)
     for it in items:
         r.answer(it, 1 if it["relevant_gold"] else 2)
     r2 = HumanRater(items, human2)
     for it in items:
         r2.answer(it, 2 if it["relevant_gold"] else 1)  # human2 disagrees with human
-    with queen.open("w", encoding="utf-8") as f:
+    with auditor.open("w", encoding="utf-8") as f:
         for it in items:
             f.write(json.dumps(
                 {"item_id": it["item_id"], "label": 1 if it["relevant_gold"] else 2}) + "\n")
-    res = compute_agreement(items, human, queen, human2)
+    res = compute_agreement(items, human, auditor, human2)
     assert res["verdict"] == "FAIL"
     assert "human-human" in res["reasons"][0]
 
 
-def test_queen_runs_with_injected_generate_fn(tmp_path):
+def test_auditor_runs_with_injected_generate_fn(tmp_path):
     items = build_items(5, seed=7)
-    out = tmp_path / "queen.ndjson"
+    out = tmp_path / "auditor.ndjson"
 
     def fake_gen(prompt: str) -> str:
         return json.dumps({"relevant": True, "reason": "used"})
 
-    run_queen(items, out, "http://x", "m", generate_fn=fake_gen)
+    run_auditor(items, out, "http://x", "m", generate_fn=fake_gen)
     labels = {}
     for line in out.read_text(encoding="utf-8").strip().splitlines():
         rec = json.loads(line)
@@ -123,7 +123,7 @@ def test_degenerate_query_detection():
     assert not is_degenerate_query("How does structured logs fit with error envelope?")
 
     items = build_items(50, seed=7)
-    # ensure the exclusion path is exercised end-to-end: build a human/queen
+    # ensure the exclusion path is exercised end-to-end: build a human/auditor
     # pair that would PASS on clean items, and confirm degenerate ids appear
     # in the excluded block
     import tempfile
@@ -132,16 +132,16 @@ def test_degenerate_query_detection():
     with tempfile.TemporaryDirectory() as d:
         d = Path(d)
         human = d / "h.ndjson"
-        queen = d / "o.ndjson"
+        auditor = d / "o.ndjson"
         r = HumanRater(items, human)
         for it in items:
             r.answer(it, 1 if it["relevant_gold"] else 2)
-        with queen.open("w", encoding="utf-8") as f:
+        with auditor.open("w", encoding="utf-8") as f:
             for it in items:
                 f.write(json.dumps(
                     {"item_id": it["item_id"],
                      "label": 1 if it["relevant_gold"] else 2}) + "\n")
-        res = compute_agreement(items, human, queen)
+        res = compute_agreement(items, human, auditor)
         assert res["verdict"] == "PASS"
         assert res["excluded_degenerate"]["n"] > 0
         assert len(res["excluded_degenerate"]["item_ids"]) == res["excluded_degenerate"]["n"]

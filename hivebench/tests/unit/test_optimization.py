@@ -2,7 +2,7 @@
 
 import pytest
 
-from queen.ground_truth import GroundTruthDB
+from auditor.ground_truth import GroundTruthDB
 from testing.optimization import (
     optimize_budget_ranges,
     optimize_decay,
@@ -60,11 +60,11 @@ def decay_db():
     db = GroundTruthDB()
     # old relevant (decays out at high multiplier), old irrelevant, recent relevant
     for _ in range(4):
-        db.record_queen_label(turn=1, chunk_id="old_rel", predicted_relevant=True,
+        db.record_auditor_label(turn=1, chunk_id="old_rel", predicted_relevant=True,
                                actually_relevant=True, score=0.9)
-        db.record_queen_label(turn=1, chunk_id="old_irr", predicted_relevant=False,
+        db.record_auditor_label(turn=1, chunk_id="old_irr", predicted_relevant=False,
                                actually_relevant=False, score=0.2)
-        db.record_queen_label(turn=10, chunk_id="recent", predicted_relevant=True,
+        db.record_auditor_label(turn=10, chunk_id="recent", predicted_relevant=True,
                                actually_relevant=True, score=0.9)
     yield db
     db.close()
@@ -100,7 +100,7 @@ def test_optimize_routing_replay_finds_interior_optimum(routing_db):
     best, _, results = optimize_routing_threshold(routing_db)
     values = [v for _, v in results]
     assert len(set(round(v, 6) for v in values)) > 1
-    # threshold 2 matches the queen's own default and minimizes cost -> best
+    # threshold 2 matches the auditor's own default and minimizes cost -> best
     assert best == 2
     assert max(values) == max(v for _, v in results)
 

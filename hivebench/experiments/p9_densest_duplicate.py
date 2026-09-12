@@ -1,4 +1,4 @@
-"""P9 — Densest-Duplicate Hypothesis (deterministic A/B, no LLM queen).
+"""P9 — Densest-Duplicate Hypothesis (deterministic A/B, no LLM auditor).
 
 The prediction: when semantically duplicate chunks merge (cosine > 0.92),
 keeping the information-densest version beats keeping the most recent one —

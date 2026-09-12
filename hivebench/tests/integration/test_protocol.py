@@ -6,7 +6,7 @@ from backend.lmstudio import LMStudioBackend
 from cortex.baselines.runner import load_conversations
 from cortex.e2e import FakeUltraSmall, MockTransport
 from experiments.run_p1_p10 import PredictionSuite, _load_labels
-from queen.queen import Queen
+from auditor.auditor import Auditor
 from sieve.medium import MediumDrone
 
 
@@ -14,12 +14,12 @@ def _suite():
     convs = load_conversations("hivebench/tests/fixtures/generated")
     labels = _load_labels(convs)
     backend = LMStudioBackend(base_url="localhost", model="m", transport=MockTransport())
-    queen = Queen(
+    auditor = Auditor(
         generate_fn=lambda p: json.dumps({"sufficient": True, "used_pieces": [], "missing": [], "score": 4})
     )
     return PredictionSuite(
         backend, FakeUltraSmall(), MediumDrone(score_pair_fn=lambda q, c: 0.5),
-        convs, labels, queen, live=False,
+        convs, labels, auditor, live=False,
     )
 
 
@@ -59,7 +59,7 @@ def test_p11_comb_return_protocol_pass():
     from cortex.baselines.runner import load_conversations
     from cortex.e2e import MockTransport
     from experiments.run_p1_p10 import PredictionSuite, _load_labels
-    from queen.queen import Queen
+    from auditor.auditor import Auditor
     from sieve.medium import MediumDrone
     from sieve.ultra_small import UltraSmallDrone
 
@@ -77,7 +77,7 @@ def test_p11_comb_return_protocol_pass():
     suite = PredictionSuite(
         LMStudioBackend(base_url="localhost", model="m", transport=MockTransport()),
         ultra, MediumDrone(score_pair_fn=lambda q, c: 0.5),
-        [], labels, Queen(generate_fn=lambda p: json.dumps(
+        [], labels, Auditor(generate_fn=lambda p: json.dumps(
             {"sufficient": True, "used_pieces": [], "missing": [], "score": 4})),
         live=False,
     )
@@ -102,7 +102,7 @@ def test_p3_long_conversations_close_sufficiency():
     from cortex.baselines.runner import load_conversations
     from cortex.e2e import MockTransport
     from experiments.run_p1_p10 import PredictionSuite, _load_labels
-    from queen.queen import Queen
+    from auditor.auditor import Auditor
     from sieve.medium import MediumDrone
     from sieve.ultra_small import UltraSmallDrone
 
@@ -114,7 +114,7 @@ def test_p3_long_conversations_close_sufficiency():
         LMStudioBackend(base_url="localhost", model="m", transport=MockTransport()),
         ultra, MediumDrone(score_pair_fn=lambda q, c: 0.5),
         convs, labels,
-        Queen(generate_fn=lambda p: json.dumps(
+        Auditor(generate_fn=lambda p: json.dumps(
             {"sufficient": True, "used_pieces": [], "missing": [], "score": 4})),
         live=False,
     )
@@ -140,7 +140,7 @@ def test_p4_horizon_corpus_separates_domains():
     from cortex.baselines.runner import load_conversations
     from cortex.e2e import MockTransport
     from experiments.run_p1_p10 import PredictionSuite, _load_labels
-    from queen.queen import Queen
+    from auditor.auditor import Auditor
     from sieve.medium import MediumDrone
     from sieve.ultra_small import UltraSmallDrone
 
@@ -160,7 +160,7 @@ def test_p4_horizon_corpus_separates_domains():
         LMStudioBackend(base_url="localhost", model="m", transport=MockTransport()),
         ultra, MediumDrone(score_pair_fn=lambda q, c: 0.5),
         convs, labels,
-        Queen(generate_fn=lambda p: json.dumps(
+        Auditor(generate_fn=lambda p: json.dumps(
             {"sufficient": True, "used_pieces": [], "missing": [], "score": 4})),
         live=False,
     )
@@ -283,7 +283,7 @@ def test_p9_densest_beats_recency():
     from cortex.baselines.runner import load_conversations
     from cortex.e2e import MockTransport
     from experiments.run_p1_p10 import PredictionSuite, _load_labels
-    from queen.queen import Queen
+    from auditor.auditor import Auditor
     from sieve.medium import MediumDrone
     from sieve.ultra_small import UltraSmallDrone
     from tests.fixtures.synthetic_conversations.generate import P9_SEED, generate_p9
@@ -302,7 +302,7 @@ def test_p9_densest_beats_recency():
         LMStudioBackend(base_url="localhost", model="m", transport=MockTransport()),
         ultra, MediumDrone(score_pair_fn=lambda q, c: 0.5),
         base, labels,
-        Queen(generate_fn=lambda p: json.dumps(
+        Auditor(generate_fn=lambda p: json.dumps(
             {"sufficient": True, "used_pieces": [], "missing": [], "score": 4})),
         live=False,
     )

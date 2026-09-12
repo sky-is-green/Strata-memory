@@ -8,12 +8,12 @@ Produces the labeled datasets the white paper's experiments need:
 
 Labels are *auto-derived* from the synthetic corpus structure (topic membership
 and cross-references), which is deterministic and reproducible. The generated
-JSON/CSV files are also the review surface for human or LLM-queen annotation:
+JSON/CSV files are also the review surface for human or LLM-auditor annotation:
 override any ``*_auto`` field with a reviewed label.
 
 Usage::
 
-    python -m queen.labeling --output hivebench/tests/fixtures/labels
+    python -m auditor.labeling --output hivebench/tests/fixtures/labels
 """
 
 from __future__ import annotations
@@ -24,7 +24,7 @@ import random
 import re
 from pathlib import Path
 
-from queen.topics import TOPICS
+from auditor.topics import TOPICS
 
 DEFAULT_LABEL_DIR = Path(__file__).resolve().parents[2] / "hivebench" / "tests" / "fixtures" / "labels"
 
@@ -91,7 +91,7 @@ def generate_query_chunk_pairs(conversations, n: int = 200, seed: int = 0) -> li
 
 def generate_routing_decision_labels(conversations, n: int = 200) -> list[dict]:
     """Label the 'optimal' route per query. Uses the heuristic router as the
-    proxy queen until a real queen labels these (see note in the record)."""
+    proxy auditor until a real auditor labels these (see note in the record)."""
     from cortex.routing import DroneRouter
 
     router = DroneRouter()

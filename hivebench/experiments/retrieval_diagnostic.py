@@ -1,8 +1,8 @@
-"""Deterministic P2 retrieval diagnostic (no LLM queen).
+"""Deterministic P2 retrieval diagnostic (no LLM auditor).
 
-The queen-based "retrieval_precision" in a run is really a per-turn context-
+The auditor-based "retrieval_precision" in a run is really a per-turn context-
 sufficiency rate: ``predicted_relevant`` is hardcoded True and
-``actually_relevant`` is the queen's sufficiency verdict, so recall always
+``actually_relevant`` is the auditor's sufficiency verdict, so recall always
 reports 100% and false-eviction always 0%. This module measures P2 the way the
 white paper defines it — from labeled query-chunk pairs — using the synthetic
 corpus's own ground truth: each user query in a fixture has a known assistant
@@ -290,7 +290,7 @@ def main() -> None:
     conversations = load_conversations(args.conversations)
     result = compute_retrieval_vs_fixture(report.get("conversations", []), conversations)
 
-    print(f"run {run_dir.name}: deterministic P2 (fixture ground truth, no queen)")
+    print(f"run {run_dir.name}: deterministic P2 (fixture ground truth, no auditor)")
     print(f"  sampled turns         : {result['sampled_turns']}")
     print(f"  measurable (has facts): {result['measurable_turns']}")
     print(f"  retrievable (stated)  : {result['retrievable_turns']} "

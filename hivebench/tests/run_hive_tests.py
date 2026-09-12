@@ -4,7 +4,7 @@ Groups
 ------
 - **speed**        : performance benchmarks (latency, throughput, memory, drones).
 - **intelligence** : accuracy / reasoning / scientific-quality tests (retrieval
-                     precision, routing/classifier accuracy, queen, P1-P10,
+                     precision, routing/classifier accuracy, auditor, P1-P10,
                      P5 training, A/B statistics).
 - **skills**       : component functionality & integration correctness (logger,
                      drones, strata context, backends, security, resilience, E2E).
@@ -54,12 +54,12 @@ ESTIMATES = {
 }
 
 # Tests that measure accuracy / reasoning / scientific quality (P2/P6/P8/P1-P10,
-# classifier, queen, ground truth, statistical A/B).
+# classifier, auditor, ground truth, statistical A/B).
 INTELLIGENCE = [
     "hivebench/tests/unit/test_classifier.py",
     "hivebench/tests/unit/test_routing.py",
     "hivebench/tests/unit/test_ground_truth.py",
-    "hivebench/tests/unit/test_queen.py",
+    "hivebench/tests/unit/test_auditor.py",
     "hivebench/tests/unit/test_optimization.py",
     "hivebench/tests/unit/test_ab_test.py",
     "hivebench/tests/unit/test_mcp_battery.py",
@@ -71,7 +71,7 @@ INTELLIGENCE = [
     "hivebench/tests/integration/test_protocol.py",
     "hivebench/tests/integration/test_return_corpus.py",
     "hivebench/tests/integration/test_p5_smoke.py",
-    "hivebench/tests/integration/test_queen_pipeline.py",
+    "hivebench/tests/integration/test_auditor_pipeline.py",
 ]
 
 # Performance benchmark scripts (speed group).

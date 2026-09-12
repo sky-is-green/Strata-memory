@@ -11,7 +11,7 @@ generates two replies:
 
 Each reply is then scored *deterministically* on answer-fact presence — did the
 answer contain the fixture ground-truth facts (``_answer_fact_terms``)? Optionally
-(``--queen``) each arm is also scored for context sufficiency by the LLM queen.
+(``--auditor``) each arm is also scored for context sufficiency by the LLM auditor.
 
 Metrics (over retrievable turns with measurable facts):
 
@@ -49,7 +49,7 @@ from focal.assembly import ContextAssembler
 from focal.budget import AdaptiveBudget
 from membrane.dedup import ContextDeduplicator
 from membrane.drift import TopicDriftDetector
-from queen.queen import Queen, TurnRecord
+from auditor.auditor import Auditor, TurnRecord
 from retention.store import ContextStore
 from sieve.medium import MediumDrone
 from sieve.ultra_small import UltraSmallDrone
@@ -86,7 +86,7 @@ def _answer_fact_scoring(facts, *texts):
 
 def run_paired(conversations, backend, ultra, medium, sampling=None,
                max_turns=None, fifo_budget: int = FIFO_WINDOW_TOKENS,
-               queen=None, verbose: bool = False,
+               auditor=None, verbose: bool = False,
                checkpoint_path: str | Path | None = None,
                checkpoint_every: int = 5,
                resume: dict | None = None,
@@ -229,21 +229,21 @@ def run_paired(conversations, backend, ultra, medium, sampling=None,
                         "reply_hive": reply_h[:500],
                         "reply_fifo": reply_f[:500],
                     }
-                    if queen is not None:
-                        row["queen"] = {}
+                    if auditor is not None:
+                        row["auditor"] = {}
                         for arm, ctx, reply in (("strata", hive_ctx, reply_h),
                                                 ("fifo", fifo_ctx, reply_f)):
                             try:
-                                label = queen.evaluate_turn(TurnRecord(
+                                label = auditor.evaluate_turn(TurnRecord(
                                     turn=turn, assembled_context=ctx, user_query=q,
                                     llm_response=reply, chunk_ids=[],
                                 ))
-                                row["queen"][arm] = {
+                                row["auditor"][arm] = {
                                     "sufficient": label.context_sufficient,
                                     "score": label.sufficiency_score,
                                 }
                             except Exception as exc:  # noqa: BLE001
-                                row["queen"][arm] = {"error": str(exc)[:200]}
+                                row["auditor"][arm] = {"error": str(exc)[:200]}
                     rows.append(row)
 
                 # Grow the strata store like the live pipeline on every user turn:
@@ -347,20 +347,20 @@ def run_paired(conversations, backend, ultra, medium, sampling=None,
             if ctx_fact_retrievable else 0.0,
         "fifo_budget_tokens": fifo_budget,
     }
-    if queen is not None:
-        qh = [r["queen"]["strata"] for r in rows if "strata" in r.get("queen", {})
-              and "sufficient" in r["queen"]["strata"]]
-        qf = [r["queen"]["fifo"] for r in rows if "fifo" in r.get("queen", {})
-              and "sufficient" in r["queen"]["fifo"]]
-        metrics["queen_hive_sufficient_rate"] = round(
+    if auditor is not None:
+        qh = [r["auditor"]["strata"] for r in rows if "strata" in r.get("auditor", {})
+              and "sufficient" in r["auditor"]["strata"]]
+        qf = [r["auditor"]["fifo"] for r in rows if "fifo" in r.get("auditor", {})
+              and "sufficient" in r["auditor"]["fifo"]]
+        metrics["auditor_hive_sufficient_rate"] = round(
             sum(1 for x in qh if x["sufficient"]) / len(qh) * 100.0, 1) if qh else None
-        metrics["queen_fifo_sufficient_rate"] = round(
+        metrics["auditor_fifo_sufficient_rate"] = round(
             sum(1 for x in qf if x["sufficient"]) / len(qf) * 100.0, 1) if qf else None
 
     return {"metrics": metrics, "turns": rows}
 
 
-def _live_queen(backend):
+def _live_auditor(backend):
     def fn(prompt: str) -> str:
         backend.pinned_prefix = ""
         return backend.generate(
@@ -392,9 +392,9 @@ def main(argv: list[str] | None = None) -> int:
              "'{\"temperature\":0.7}' (backend.sampling fields)",
     )
     parser.add_argument(
-        "--queen", action="store_true",
-        help="also score each arm's context sufficiency with the LLM queen "
-             "(doubles label-phase LLM cost; mock mode uses the mock queen)",
+        "--auditor", action="store_true",
+        help="also score each arm's context sufficiency with the LLM auditor "
+             "(doubles label-phase LLM cost; mock mode uses the mock auditor)",
     )
     parser.add_argument(
         "--fifo-budget", type=int, default=FIFO_WINDOW_TOKENS,
@@ -481,9 +481,9 @@ def main(argv: list[str] | None = None) -> int:
         live = True
 
     medium = MediumDrone(score_pair_fn=lambda q, c: 0.5)
-    queen = None
-    if args.queen:
-        queen = Queen(generate_fn=_live_queen(backend) if live else
+    auditor = None
+    if args.auditor:
+        auditor = Auditor(generate_fn=_live_auditor(backend) if live else
                       (lambda p: json.dumps(
                           {"sufficient": True, "used_pieces": [], "missing": [],
                            "score": 4})))
@@ -513,7 +513,7 @@ def main(argv: list[str] | None = None) -> int:
 
     report = run_paired(conversations, backend, ultra, medium, sampling=sampling,
                         max_turns=args.max_turns, fifo_budget=args.fifo_budget,
-                        queen=queen, verbose=True,
+                        auditor=auditor, verbose=True,
                         checkpoint_path=(
                             Path(args.checkpoint) if args.checkpoint else
                             (Path(args.output) if args.output else
@@ -556,9 +556,9 @@ def main(argv: list[str] | None = None) -> int:
           f"neither {m['neither_sufficient']}")
     print(f"  context sufficiency : strata {m['ctx_hive_ge_fifo_ratio']}% "
           f">= FIFO (P3-style)")
-    if m.get("queen_hive_sufficient_rate") is not None:
-        print(f"  queen sufficiency   : strata {m['queen_hive_sufficient_rate']}% "
-              f"vs FIFO {m['queen_fifo_sufficient_rate']}%")
+    if m.get("auditor_hive_sufficient_rate") is not None:
+        print(f"  auditor sufficiency   : strata {m['auditor_hive_sufficient_rate']}% "
+              f"vs FIFO {m['auditor_fifo_sufficient_rate']}%")
     print(f"Wrote {out.resolve()}")
     return 0
 

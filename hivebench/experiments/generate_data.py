@@ -4,7 +4,7 @@ Drives the full Strata pipeline over a set of conversations and writes a
 self-contained run directory with:
 
   - NDJSON event logs (correlation-tagged, redacted, rotated)
-  - a ground-truth SQLite DB (routing decisions + queen labels)
+  - a ground-truth SQLite DB (routing decisions + auditor labels)
   - a per-conversation E2E report
   - optional P1-P10 protocol report (--protocol)
   - optional LM Studio / FIFO baselines (--baselines)
@@ -60,9 +60,9 @@ from cortex.strata import Strata
 from cortex.routing import DroneRouter
 from experiments.dashboard import KeepAwake, TermDashboard
 from logs.event_logger import EventLogger
-from queen.queen import Queen, TurnRecord
-from queen.ground_truth import GroundTruthDB
-from queen.labeling import generate_all
+from auditor.auditor import Auditor, TurnRecord
+from auditor.ground_truth import GroundTruthDB
+from auditor.labeling import generate_all
 from retention.store import ContextStore
 from sieve.medium import MediumDrone
 from sieve.ultra_small import UltraSmallDrone
@@ -401,8 +401,8 @@ def _aggregate(records):
     }
 
 
-def _populate_ground_truth(db, records, queen, logger=None, push=None, workers=1):
-    """Record routing decisions and queen labels from a run.
+def _populate_ground_truth(db, records, auditor, logger=None, push=None, workers=1):
+    """Record routing decisions and auditor labels from a run.
 
     The LLM-as-judge label calls are independent and dominate this phase's wall
     time, so they run concurrently on a thread pool (``workers`` > 1). Results
@@ -416,7 +416,7 @@ def _populate_ground_truth(db, records, queen, logger=None, push=None, workers=1
             query = t["query"]
             route = DroneRouter().route(query)
             db.record_routing_decision(t["turn"], _router_score(route), route.route_to)
-    # queen labels on a sample of assembled turns
+    # auditor labels on a sample of assembled turns
     sampled = [t for c in records for t in c["turns"]][::10]
     if push is not None:
         push("set_phase", f"ground truth labeling ({len(sampled)} sampled)")
@@ -425,7 +425,7 @@ def _populate_ground_truth(db, records, queen, logger=None, push=None, workers=1
 
     def eval_one(t):
         try:
-            label = queen.evaluate_turn(
+            label = auditor.evaluate_turn(
                 TurnRecord(
                     turn=t["turn"],
                     assembled_context=t.get("assembled_content") or "",
@@ -433,7 +433,7 @@ def _populate_ground_truth(db, records, queen, logger=None, push=None, workers=1
                 )
             )
             return label, None
-        except Exception as exc:  # noqa: BLE001 — one bad queen call must not kill the run
+        except Exception as exc:  # noqa: BLE001 — one bad auditor call must not kill the run
             return None, str(exc)
 
     if workers > 1 and len(sampled) > 1:
@@ -447,22 +447,22 @@ def _populate_ground_truth(db, records, queen, logger=None, push=None, workers=1
     for i, (t, (label, err)) in enumerate(zip(sampled, results), 1):
         if err is not None:
             if logger is not None:
-                logger.log("queen", "label_failed",
+                logger.log("auditor", "label_failed",
                            {"turn": t["turn"], "error": err[:200]})
             if push is not None:
-                push("add_line", f"queen {i}/{len(sampled)} turn {t['turn']}: FAILED ({err})")
+                push("add_line", f"auditor {i}/{len(sampled)} turn {t['turn']}: FAILED ({err})")
             # Always surface on stderr so a label failure is visible even with no
             # terminal dashboard / captured stdout.
-            print(f"  queen {i}/{len(sampled)} turn {t['turn']}: label FAILED ({err})",
+            print(f"  auditor {i}/{len(sampled)} turn {t['turn']}: label FAILED ({err})",
                   file=sys.stderr)
             continue
         # if no chunk ids, record one aggregate label per sampled turn
-        db.record_queen_label(t["turn"], "aggregate", True,
+        db.record_auditor_label(t["turn"], "aggregate", True,
                                label.context_sufficient, label.sufficiency_score)
         if push is not None:
-            push("add_line", f"queen {i}/{len(sampled)} turn {t['turn']}: "
+            push("add_line", f"auditor {i}/{len(sampled)} turn {t['turn']}: "
                              f"sufficient={label.context_sufficient} score={label.sufficiency_score}")
-        print(f"  queen {i}/{len(sampled)} turn {t['turn']}: "
+        print(f"  auditor {i}/{len(sampled)} turn {t['turn']}: "
               f"sufficient={label.context_sufficient} score={label.sufficiency_score}",
               file=sys.stderr)
 
@@ -493,7 +493,7 @@ def _compute_post_run_pes(records, db, baseline_tps: float | None = None):
     The per-turn in-process PES (``Strata.process_turn``) only sees latency and
     context utilization, so in live runs it floors near zero (the paper's
     LatencyHealth is ms-calibrated and live generation is seconds). This computes
-    the paper's real PES after the run, when queen retrieval/routing metrics
+    the paper's real PES after the run, when auditor retrieval/routing metrics
     exist. Components that are genuinely unavailable are dropped (the scorer
     renormalizes). Returns a dict, or None with no turns.
     """
@@ -553,7 +553,7 @@ def _compute_post_run_pes(records, db, baseline_tps: float | None = None):
             "avg_context_utilization_pct": round(avg_util * 100.0, 1),
             "actual_tps": round(actual_tps, 1) if actual_tps else None,
             "baseline_tps": baseline_tps,
-            "queen_labels": db.label_count(),
+            "auditor_labels": db.label_count(),
         },
         "notes": notes,
     }
@@ -616,8 +616,8 @@ def main(argv: list[str] | None = None) -> int:
              "embedding model yields confidence ~1.0 regardless)",
     )
     parser.add_argument(
-        "--queen-workers", type=int, default=4,
-        help="parallel workers for the ground-truth queen-labeling phase. "
+        "--auditor-workers", type=int, default=4,
+        help="parallel workers for the ground-truth auditor-labeling phase. "
              "Only speeds up when the backend serves parallel slots (llama.cpp "
              "-np / LM Studio parallel requests); single-slot servers queue "
              "the requests (harmless, no speedup)",
@@ -870,13 +870,13 @@ def main(argv: list[str] | None = None) -> int:
     # --- ground truth ---
     db_path = run_dir / "ground_truth.sqlite"
     db = GroundTruthDB(db_path)
-    queen = Queen(generate_fn=_mock_queen if args.mock else _live_queen(backend))
-    _populate_ground_truth(db, records, queen, logger=logger, push=push,
-                           workers=args.queen_workers)
+    auditor = Auditor(generate_fn=_mock_auditor if args.mock else _live_auditor(backend))
+    _populate_ground_truth(db, records, auditor, logger=logger, push=push,
+                           workers=args.auditor_workers)
     post_run_pes = _compute_post_run_pes(records, db, baseline_tps=baseline_tps)
     has_labels = db.label_count() > 0
     ground_truth_metrics = {
-        "queen_labels": db.label_count(),
+        "auditor_labels": db.label_count(),
         "retrieval_precision": round(db.retrieval_precision(), 1) if has_labels else None,
         "retrieval_recall": round(db.retrieval_recall(), 1) if has_labels else None,
         "false_eviction_rate": round(db.false_eviction_rate(), 1) if has_labels else None,
@@ -884,8 +884,8 @@ def main(argv: list[str] | None = None) -> int:
     }
     db.close()
 
-    # Deterministic P2 (no queen): measure retrieval against the fixture's own
-    # ground-truth answers. The queen-based precision above is really a per-turn
+    # Deterministic P2 (no auditor): measure retrieval against the fixture's own
+    # ground-truth answers. The auditor-based precision above is really a per-turn
     # sufficiency rate (predicted_relevant is hardcoded True), so recall/eviction
     # are trivial there; this is the white paper's actual labeled-chunk metric.
     from experiments.retrieval_diagnostic import compute_retrieval_vs_fixture
@@ -901,7 +901,7 @@ def main(argv: list[str] | None = None) -> int:
 
         labels = _load_labels(conversations)
         suite = PredictionSuite(backend, ultra, MediumDrone(score_pair_fn=lambda q, c: 0.5),
-                                conversations, labels, queen, live=live)
+                                conversations, labels, auditor, live=live)
         protocol_report = [r.__dict__ for r in suite.run()]
         for r in protocol_report:
             push("add_line", f"P{r['id']} {r['status']}: {r['title']}")
@@ -992,13 +992,13 @@ def main(argv: list[str] | None = None) -> int:
     return 0
 
 
-def _mock_queen(prompt: str) -> str:
+def _mock_auditor(prompt: str) -> str:
     return json.dumps({"sufficient": True, "used_pieces": [], "missing": [], "score": 4})
 
 
-def _live_queen(backend):
+def _live_auditor(backend):
     def fn(prompt: str) -> str:
-        # The queen is a JSON-evaluation task, not a context-answer task: drop
+        # The auditor is a JSON-evaluation task, not a context-answer task: drop
         # the E2E pinned prefix, frame JSON explicitly, and leave headroom for
         # reasoning tokens (reasoning models spend their budget on CoT first).
         backend.pinned_prefix = ""

@@ -1,6 +1,6 @@
 """Ground-truth database (SQLite).
 
-Stores queen labels and strata decisions for retrieval-quality metrics:
+Stores auditor labels and strata decisions for retrieval-quality metrics:
 precision, recall, false-eviction rate, and routing accuracy. Zero-config
 single-file SQLite is sufficient at this scale (plan S4.2 / tech stack).
 """
@@ -23,7 +23,7 @@ class GroundTruthDB:
     def _create_schema(self) -> None:
         self._conn.executescript(
             """
-            CREATE TABLE IF NOT EXISTS queen_labels (
+            CREATE TABLE IF NOT EXISTS auditor_labels (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 turn INTEGER NOT NULL,
                 chunk_id TEXT NOT NULL,
@@ -53,7 +53,7 @@ class GroundTruthDB:
     # ------------------------------------------------------------------
     # Records
     # ------------------------------------------------------------------
-    def record_queen_label(
+    def record_auditor_label(
         self,
         turn: int,
         chunk_id: str,
@@ -62,7 +62,7 @@ class GroundTruthDB:
         score: Optional[float] = None,
     ) -> None:
         self._conn.execute(
-            "INSERT INTO queen_labels(turn, chunk_id, predicted_relevant, actually_relevant, score) "
+            "INSERT INTO auditor_labels(turn, chunk_id, predicted_relevant, actually_relevant, score) "
             "VALUES (?,?,?,?,?)",
             (turn, chunk_id, int(predicted_relevant), int(actually_relevant), score),
         )
@@ -78,7 +78,7 @@ class GroundTruthDB:
         self._conn.commit()
 
     def record_routing_decision(self, turn: int, score: float, optimal_route: str) -> None:
-        """Record a routing decision with its heuristic score and the queen's
+        """Record a routing decision with its heuristic score and the auditor's
         optimal route, so routing thresholds can be replayed later (S4.4)."""
         outcome = "correct" if self._route_for(score, default_threshold=2) == optimal_route else "wrong"
         self.record_hive_decision(
@@ -106,7 +106,7 @@ class GroundTruthDB:
     def _label_rows(self, window: int) -> list:
         return self._conn.execute(
             "SELECT predicted_relevant, actually_relevant FROM "
-            "(SELECT * FROM queen_labels ORDER BY id DESC LIMIT ?)",
+            "(SELECT * FROM auditor_labels ORDER BY id DESC LIMIT ?)",
             (window,),
         ).fetchall()
 
@@ -149,4 +149,4 @@ class GroundTruthDB:
         return sum(1 for r in rows if r["outcome"] == "correct") / len(rows) * 100.0
 
     def label_count(self) -> int:
-        return self._conn.execute("SELECT COUNT(*) AS n FROM queen_labels").fetchone()["n"]
+        return self._conn.execute("SELECT COUNT(*) AS n FROM auditor_labels").fetchone()["n"]

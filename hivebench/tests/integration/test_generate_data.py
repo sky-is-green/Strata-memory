@@ -22,7 +22,7 @@ def test_generate_data_mock_run(tmp_path):
     # post-run PES + ground-truth metrics are reported
     assert report["post_run_pes"]["pes"] >= 0.0
     assert report["post_run_pes"]["band"] in ("GREEN", "YELLOW", "RED", "CRITICAL")
-    assert report["ground_truth"]["queen_labels"] >= 1
+    assert report["ground_truth"]["auditor_labels"] >= 1
     assert report["ground_truth"]["routing_accuracy"] is not None
 
 

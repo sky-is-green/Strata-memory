@@ -1,11 +1,11 @@
-"""Resilience tests (E1): malformed responses, unreachable backend, queen."""
+"""Resilience tests (E1): malformed responses, unreachable backend, auditor."""
 
 import json
 
 import pytest
 
 from backend.openai_compat import OpenAICompatBackend
-from queen.queen import Queen, TurnRecord
+from auditor.auditor import Auditor, TurnRecord
 
 
 class _Resp:
@@ -47,15 +47,15 @@ def test_backend_health_false_when_down():
     assert backend.health() is False
 
 
-def test_queen_malformed_json_raises():
-    queen = Queen(generate_fn=lambda p: "not json")
+def test_auditor_malformed_json_raises():
+    auditor = Auditor(generate_fn=lambda p: "not json")
     with pytest.raises(Exception):
-        queen.evaluate_turn(TurnRecord(1, "c", "q", "r"))
+        auditor.evaluate_turn(TurnRecord(1, "c", "q", "r"))
 
 
-def test_queen_valid_json_ok():
-    queen = Queen(
+def test_auditor_valid_json_ok():
+    auditor = Auditor(
         generate_fn=lambda p: json.dumps({"sufficient": True, "used_pieces": [], "missing": [], "score": 4})
     )
-    label = queen.evaluate_turn(TurnRecord(1, "c", "q", "r"))
+    label = auditor.evaluate_turn(TurnRecord(1, "c", "q", "r"))
     assert label.context_sufficient is True

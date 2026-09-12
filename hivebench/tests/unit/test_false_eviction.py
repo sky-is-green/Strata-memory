@@ -1,6 +1,6 @@
 """Deterministic pipeline-level false-eviction measurement (whitepaper §8 row).
 
-Ground truth is the chunks' own fact terms — no LLM queen, no confound. The
+Ground truth is the chunks' own fact terms — no LLM auditor, no confound. The
 store cap (`max_chunks`) forces LRU eviction; a "false" eviction is one where a
 later query's ground-truth answer lived in the evicted chunk. The mechanism
 comparison (refresh protection) shows the retention layer's lever, mirroring

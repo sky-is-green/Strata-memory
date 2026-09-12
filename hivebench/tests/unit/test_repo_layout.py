@@ -28,7 +28,7 @@ EXPECTED_PACKAGES = {
     "focal",
     "logs",
     "membrane",
-    "queen",
+    "auditor",
     "retention",
     "sieve",
     "testing",

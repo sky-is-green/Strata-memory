@@ -7,7 +7,7 @@ comb, the fact is unretrievable (P4's stale factor walls off every old fact).
 With the comb, the evicted fact is frozen to disk and resurrected as a
 budget-competitive candidate (raw relevance, exempt from stale/drift).
 
-Ground truth is the chunks' own fact terms — no queen, no confound. Mirrors
+Ground truth is the chunks' own fact terms — no auditor, no confound. Mirrors
 the P2 diagnostic's fact-term math and the P4 sweep's fixed-budget isolation.
 """
 

@@ -1,7 +1,7 @@
-"""Async batch queen.
+"""Async batch auditor.
 
 Runs in a background process (never on the hot path). Evaluates past turns with
-an LLM-as-judge to produce ground-truth relevance labels. The queen prompt asks
+an LLM-as-judge to produce ground-truth relevance labels. The auditor prompt asks
 about *context utilization* rather than answer correctness, to avoid the
 parametric-knowledge confound (Pitfall 11).
 
@@ -27,7 +27,7 @@ class TurnRecord:
 
 
 @dataclass
-class QueenLabel:
+class AuditorLabel:
     turn: int
     context_sufficient: bool
     context_used: list
@@ -36,7 +36,7 @@ class QueenLabel:
     chunk_labels: dict = field(default_factory=dict)
 
 
-class Queen:
+class Auditor:
     EVALUATION_PROMPT = """You are evaluating whether an AI assistant had sufficient context.
 
 The assistant was given this context:
@@ -61,7 +61,7 @@ Respond ONLY in this JSON shape:
         """``generate_fn(prompt) -> JSON string`` is the injected LLM."""
         self.generate_fn = generate_fn
 
-    def evaluate_turn(self, turn_data: TurnRecord) -> QueenLabel:
+    def evaluate_turn(self, turn_data: TurnRecord) -> AuditorLabel:
         prompt = self.EVALUATION_PROMPT.format(
             context=turn_data.assembled_context,
             query=turn_data.user_query,
@@ -70,8 +70,8 @@ Respond ONLY in this JSON shape:
         raw = self.generate_fn(prompt)
         parsed = self._extract_json(raw)
         if parsed is None:
-            raise ValueError(f"queen returned non-JSON response: {raw[:200]!r}")
-        return QueenLabel(
+            raise ValueError(f"auditor returned non-JSON response: {raw[:200]!r}")
+        return AuditorLabel(
             turn=turn_data.turn,
             context_sufficient=bool(parsed.get("sufficient")),
             context_used=parsed.get("used_pieces", []),
@@ -116,7 +116,7 @@ Respond ONLY in this JSON shape:
 
     def run_batch(
         self, conversation_log: list[TurnRecord], sample_rate: float = 0.1
-    ) -> list[QueenLabel]:
+    ) -> list[AuditorLabel]:
         """Evaluate a sample of turns. Default 10% (every 10th turn)."""
         step = max(1, int(round(1.0 / sample_rate)))
         return [self.evaluate_turn(t) for t in conversation_log[::step]]

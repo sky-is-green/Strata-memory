@@ -11,7 +11,7 @@ from the measured test set, per the whitelist constraint:
     live run (temporal split, B3)
 
 Positives are (query, chunk) pairs where the topic-based labeler says
-"relevant" (``queen.labeling.generate_query_chunk_pairs``). The model is
+"relevant" (``auditor.labeling.generate_query_chunk_pairs``). The model is
 trained with MultipleNegativesRankingLoss (in-batch negatives) — the standard
 contrastive retrieval objective.
 
@@ -33,7 +33,7 @@ import random
 import shutil
 from pathlib import Path
 
-from queen.labeling import generate_query_chunk_pairs
+from auditor.labeling import generate_query_chunk_pairs
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 

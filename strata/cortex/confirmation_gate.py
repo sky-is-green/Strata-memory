@@ -14,7 +14,7 @@ replaces the rule with a *graded, confirmed act*.
 
 Grading reuses the deterministic retrieval diagnostic's fact math:
 ``ingestion_ratio`` = share of imprint facts the generation actually stated.
-No LLM queen is required.
+No LLM auditor is required.
 
 Falsifiable hypothesis (P12 — Confirmation-Gate Hypothesis; P11 is the comb):
 
