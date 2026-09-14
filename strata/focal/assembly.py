@@ -115,6 +115,8 @@ class ContextAssembler:
         dedup_against_payload: bool = True,
         relevance_floor: float = 0.25,
         max_chunk_share: float = 0.5,
+        stale_threshold: Optional[int] = None,
+        stale_factor: Optional[float] = None,
     ) -> AssembledContext:
         comb_candidates = comb_candidates or []
         comb_by_id = {c.id: c for c in comb_candidates}
@@ -189,6 +191,8 @@ class ContextAssembler:
         effective = DecayMatrix().apply(
             surviving, current_turn, raw_scores, drift_penalties,
             exempt_ids=set(comb_by_id),
+            stale_threshold=stale_threshold,
+            stale_factor=stale_factor,
         )
         self._tick("decay_ms", _t)
 

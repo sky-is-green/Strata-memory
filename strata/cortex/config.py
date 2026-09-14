@@ -18,9 +18,10 @@ from retention.hygiene import DEFAULT_INGEST_BLOCK_PREFIXES
 @dataclass
 class StrataConfig:
     # --- retention ---
-    decay_multiplier_init: float = 1.8
+    decay_multiplier_init: float = 1.1  # was 1.8; 1.8 killed persistent facts in >30-turn convos (2026-09-13 retrieval test)
     remembrance_threshold: float = 0.65
-    stale_threshold: int = 20
+    stale_threshold: int = 100  # was 20; 20-turn wall made long-conversation retrieval impossible (2026-09-13)
+    stale_factor: float = 0.7  # penalty multiplier for chunks older than stale_threshold (was hardcoded 0.5)
     # --- membrane ---
     dedup_threshold: float = 0.92
     drift_threshold: float = 0.6

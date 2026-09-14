@@ -210,6 +210,8 @@ class Strata:
                     skip_dedup=self.degradation.should_skip_dedup(),
                     payload_fingerprints=payload_fingerprints,
                     dedup_against_payload=self.config.dedup_against_payload,
+                    stale_threshold=self.config.stale_threshold,
+                    stale_factor=self.config.stale_factor,
                 )
                 # Comb gate: consult the surplus tier only when the active
                 # store's best raw match is weak — normal turns pay zero comb
@@ -242,6 +244,8 @@ class Strata:
                             comb_candidates=comb_candidates,
                             payload_fingerprints=payload_fingerprints,
                             dedup_against_payload=self.config.dedup_against_payload,
+                            stale_threshold=self.config.stale_threshold,
+                            stale_factor=self.config.stale_factor,
                         )
                 timings.update(self.assembler.last_timings)
                 timings["assembly_total_ms"] = round((time.perf_counter() - t0) * 1000.0, 3)

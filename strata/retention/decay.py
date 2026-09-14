@@ -27,9 +27,15 @@ class DecayMatrix:
         raw_scores: dict[str, float],
         drift_penalties: Optional[dict[str, float]] = None,
         exempt_ids: Optional[set[str]] = None,
+        stale_threshold: Optional[int] = None,
+        stale_factor: Optional[float] = None,
     ) -> dict[str, float]:
+        """Apply decay. stale_threshold / stale_factor override the
+        class constants when provided (StrataConfig threading)."""
         drift_penalties = drift_penalties or {}
         exempt_ids = exempt_ids or set()
+        threshold = stale_threshold if stale_threshold is not None else self.STALE_THRESHOLD
+        factor = stale_factor if stale_factor is not None else self.STALE_FACTOR
         effective: dict[str, float] = {}
         for chunk in chunks:
             raw = raw_scores.get(chunk.id, 0.0)
@@ -44,7 +50,7 @@ class DecayMatrix:
             age_factor = min(age / 10.0, 3.0)
             decayed = raw / (chunk.decay_multiplier ** age_factor)
             decayed *= drift_penalties.get(chunk.id, 1.0)
-            if age > self.STALE_THRESHOLD:
-                decayed *= self.STALE_FACTOR
+            if age > threshold:
+                decayed *= factor
             effective[chunk.id] = max(0.0, decayed)
         return effective
