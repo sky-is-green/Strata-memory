@@ -3,17 +3,27 @@
 #
 # Launched inside a transient systemd scope (see ~/Desktop/"Unsloth Strata").
 # Every process here lives in the scope's cgroup; when this script dies by any
-# means (exit, crash, SIGTERM, SIGKILL), systemd kills the whole cgroup
-# (KillMode=control-group, the default for scopes) - orphans are impossible.
-# No polling: event-driven via `wait -n`.
+# means (exit, crash, or a signal), the whole cgroup is reaped - orphans are
+# impossible. No polling: event-driven via wait -n.
 set -u
-cd "$(dirname "$0")/.." || exit 1
+cd "$(dirname "$0")/.." || exit 1        # -> strata-memory root
 export OMP_NUM_THREADS=1            # encoder is 12M params; 1 thread ~5ms
 export OPENBLAS_NUM_THREADS=1
 export TOKENIZERS_PARALLELISM=false
 
 STUDIO_BIN="${STUDIO_BIN:-/home/penis/.local/bin/unsloth-web}"
 PORT="${STRATA_PORT:-8765}"
+
+# Post-split (2026-09-12): sidecar code lives in the sibling hivebench checkout;
+# the venv + conversation store live here (strata-memory). Run strata's venv
+# python from the hivebench CWD so harness/experiments resolve and strata
+# resolves via STRATA_HOME.
+WORK_DIR="$(cd "$(dirname "$0")/../.." && pwd)"
+STRATA_HOME="$(pwd -P)"
+export STRATA_HOME
+HIVEBENCH_DIR="${HIVEBENCH_DIR:-$WORK_DIR/hivebench}"
+PY="$STRATA_HOME/venv/bin/python"
+STATE_DIR="${STRATA_STATE_DIR:-$STRATA_HOME/harness_state}"
 
 port_in_use() { timeout 2 bash -c "echo > /dev/tcp/127.0.0.1/$PORT" 2>/dev/null; }
 
@@ -31,7 +41,10 @@ if port_in_use; then
   exec "$STUDIO_BIN" "$@"
 fi
 
-start_sidecar() { venv/bin/python -m harness --no-open --port "$PORT" & SIDECAR=$!; }
+start_sidecar() {
+  ( cd "$HIVEBENCH_DIR" && exec "$PY" -m harness --no-open --port "$PORT" --state-dir "$STATE_DIR" ) &
+  SIDECAR=$!
+}
 
 "$STUDIO_BIN" "$@" &
 STUDIO_PID=$!
