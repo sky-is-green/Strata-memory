@@ -14,14 +14,11 @@ export TOKENIZERS_PARALLELISM=false
 STUDIO_BIN="${STUDIO_BIN:-/home/penis/.local/bin/unsloth-web}"
 PORT="${STRATA_PORT:-8765}"
 
-# Post-split (2026-09-12): sidecar code lives in the sibling hivebench checkout;
-# the venv + conversation store live here (strata-memory). Run strata's venv
-# python from the hivebench CWD so harness/experiments resolve and strata
-# resolves via STRATA_HOME.
-WORK_DIR="$(cd "$(dirname "$0")/../.." && pwd)"
+# Standalone (2026-09-15): strata ships its own server (strata/server.py),
+# extracted from the hivebench sidecar - no sibling checkout needed. The venv
+# + conversation store live here (strata-memory).
 STRATA_HOME="$(pwd -P)"
 export STRATA_HOME
-HIVEBENCH_DIR="${HIVEBENCH_DIR:-$WORK_DIR/hivebench}"
 PY="$STRATA_HOME/venv/bin/python"
 STATE_DIR="${STRATA_STATE_DIR:-$STRATA_HOME/harness_state}"
 
@@ -42,7 +39,7 @@ if port_in_use; then
 fi
 
 start_sidecar() {
-  ( cd "$HIVEBENCH_DIR" && exec "$PY" -m harness --no-open --port "$PORT" --state-dir "$STATE_DIR" ) &
+  ( exec "$PY" -m strata.server --port "$PORT" --state-dir "$STATE_DIR" ) &
   SIDECAR=$!
 }
 
