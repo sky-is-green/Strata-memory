@@ -42,7 +42,7 @@ from typing import Callable, Optional
 import requests
 from fastapi import FastAPI, HTTPException, Query, Request
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import JSONResponse, StreamingResponse
+from fastapi.responses import JSONResponse, Response, StreamingResponse
 from pydantic import BaseModel
 
 from backend.cache_manager import KVCacheManager
@@ -58,6 +58,9 @@ from backend.providers import (
 )
 from cortex.config import StrataConfig
 from cortex.strata import Strata
+from strata.mcp.server import McpContext, handle_message
+from strata.mcp.tools import remember as mcp_remember
+from strata.mcp.tools import search as mcp_search
 from logs.event_logger import EventLogger
 from retention.hygiene import (
     DEFAULT_MAX_CHUNK_CHARS,
@@ -865,6 +868,34 @@ def create_app(
             "providers": st.registry.redacted(),
             "file": str(providers_path(st.providers_file)),
         }
+
+    @app.post("/v1/mcp")
+    async def mcp_endpoint(request: Request):
+        """Stateless JSON-RPC MCP endpoint (S2): strata_remember / strata_search."""
+        try:
+            body = await request.json()
+        except Exception:
+            raise HTTPException(400, "invalid JSON body")
+
+        def do_remember(conversation_id: str, text: str) -> dict:
+            strata = st.strata_for(conversation_id, None, with_backend=False)
+            with st.lock_for(conversation_id):
+                payload = mcp_remember(strata, text)
+                st.save_conversation(conversation_id, strata)
+            return {"conversation_id": conversation_id, **payload}
+
+        def do_search(conversation_id: str, query: str, top_k: int) -> dict:
+            strata = st.strata_for(conversation_id, None, with_backend=False)
+            with st.lock_for(conversation_id):
+                payload = mcp_search(strata, query, top_k)
+                st.save_conversation(conversation_id, strata)
+            return {"conversation_id": conversation_id, **payload}
+
+        response = handle_message(body, McpContext(
+            remember=do_remember, search=do_search))
+        if response is None:  # notifications only — nothing to answer
+            return Response(status_code=202)
+        return response
 
     return app
 
