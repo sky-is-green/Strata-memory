@@ -26,6 +26,8 @@ import hashlib
 import re
 from typing import Optional, Sequence
 
+from retention.codec import normalize_codec
+
 
 # ---------------------------------------------------------------------------
 # 1. Harness boilerplate blocklist (P0 ingest filter)
@@ -161,7 +163,14 @@ def prepare_for_storage(
       * harness ``app.py`` payload-echo guard — fingerprints incoming request
         texts with the same pipeline before forwarding.
     """
-    cleaned = strip_boilerplate(text, block_prefixes)
+    # Codec normalization first (P1): repair UTF-8 misdecoded as a legacy
+    # single-byte codec BEFORE boilerplate strip and sanitization. This is the
+    # encoder-agnostic guard: any upstream transport that mangles multibyte
+    # characters produces the same mojibake signature, and normalizing here
+    # (before fingerprinting) also fixes dedup grouping for clean vs
+    # misdecoded copies of identical text.
+    cleaned = normalize_codec(text)
+    cleaned = strip_boilerplate(cleaned, block_prefixes)
     if not cleaned or not cleaned.strip():
         return None
     if sanitize:

@@ -24,6 +24,7 @@ import numpy as np
 from cortex.baselines.metrics import estimate_tokens
 from cortex.hedges import HEDGE_CONTRACTIONS
 from cortex.routing import RoutingDecision
+from retention.codec import normalize_codec
 from retention.decay import DecayMatrix
 from retention.hygiene import strip_boilerplate
 from retention.remembrance import RemembrancePass
@@ -317,7 +318,11 @@ class ContextAssembler:
 
     @staticmethod
     def _format_context(selected: list) -> str:
-        return "\n\n".join(c.content for c in selected)
+        # Egress guard (P1): normalize every chunk on the way out so legacy
+        # stored mojibake cannot contaminate the injected context, even before
+        # a store-wide scrub has run. Idempotent and byte-identical on clean
+        # text; only repairs actual corruption signatures.
+        return "\n\n".join(normalize_codec(c.content) for c in selected)
 
     @staticmethod
     def _count_tokens(selected: list) -> int:
