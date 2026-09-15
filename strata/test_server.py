@@ -160,3 +160,19 @@ def test_mcp_initialize_and_notification(client):
     r = client.post("/v1/mcp", json={
         "jsonrpc": "2.0", "method": "notifications/initialized"})
     assert r.status_code == 202
+
+
+def test_create_app_injects_host_state(tmp_path):
+    """Host-app seam: an injected registry is used verbatim, no re-init."""
+    from server import ConversationRegistry
+
+    st = ConversationRegistry(ultra_factory=lambda: FakeUltra(),
+                              backend_factory=lambda model, provider=None: None,
+                              providers_file=None, log_dir=str(tmp_path),
+                              state_dir="")
+    app = create_app(app_state=st)
+    assert app.state.registry is st
+    with TestClient(app) as c:
+        r = c.get("/health")
+        assert r.status_code == 200
+        assert r.json()["conversations"] == len(st.hives)

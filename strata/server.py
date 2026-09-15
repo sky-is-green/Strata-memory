@@ -351,6 +351,7 @@ def create_app(
     providers_file: Optional[Path] = None,
     log_dir: str = "logs",
     state_dir: Optional[Path] = None,
+    app_state=None,
 ) -> FastAPI:
     """Build the standalone strata server.
 
@@ -360,6 +361,12 @@ def create_app(
     providers.local.json). ``state_dir=None`` defaults to ./harness_state
     (conversations survive restarts); passing an empty string disables
     persistence.
+
+    ``app_state`` is the host-app seam (hivebench / DSH plug-in): pass the
+    host's own conversation registry and the routes operate on it directly -
+    no second registry, no re-init of providers/encoder. The host keeps its
+    own non-strata routes; mounting this app last makes strata's paths fall
+    through to it (Starlette matches routes before mounts).
     """
     if providers_file is None:
         providers_file = REPO_ROOT / "providers.local.json"
@@ -412,30 +419,34 @@ def create_app(
                                     status_code=401)
         return await call_next(request)
 
-    st = ConversationRegistry(
-        ultra_factory=ultra_factory or _default_ultra,
-        backend_factory=backend_factory or _default_backend,
-        providers_file=providers_file,
-        log_dir=log_dir,
-        state_dir=state_dir if state_dir is not None else Path("harness_state"),
-    )
-    try:
-        st.registry = load_registry(providers_file)
-    except (ValueError, OSError) as exc:
-        print(f"strata-server: ignoring unreadable providers config ({exc})",
-              file=sys.stderr)
+    if app_state is not None:
+        # Host-app mount: the host owns the registry (providers, encoder,
+        # hives, locks) - operate on it directly, skip all re-initialisation.
+        st = app_state
+    else:
+        st = ConversationRegistry(
+            ultra_factory=ultra_factory or _default_ultra,
+            backend_factory=backend_factory or _default_backend,
+            providers_file=providers_file,
+            log_dir=log_dir,
+            state_dir=state_dir if state_dir is not None else Path("harness_state"),
+        )
+        try:
+            st.registry = load_registry(providers_file)
+        except (ValueError, OSError) as exc:
+            print(f"strata-server: ignoring unreadable providers config ({exc})",
+                  file=sys.stderr)
+        # Eagerly load the encoder at startup, not lazily on first request.
+        # By first-request time uvicorn's event loop + connection threads are
+        # alive and tip the process over its thread budget, so MiniLM's OpenMP
+        # pool fails to spawn (EAGAIN) and the worker dies silently. Loading
+        # here - before uvicorn serves - keeps the load in a clean state.
+        try:
+            st.ultra()
+        except Exception as exc:  # noqa: BLE001 - never block startup on encoder
+            print(f"strata-server: encoder pre-load failed ({exc}); will retry lazily",
+                  file=sys.stderr)
     app.state.registry = st
-
-    # Eagerly load the encoder at startup, not lazily on first request.
-    # By first-request time uvicorn's event loop + connection threads are
-    # alive and tip the process over its thread budget, so MiniLM's OpenMP
-    # pool fails to spawn (EAGAIN) and the worker dies silently. Loading
-    # here - before uvicorn serves - keeps the load in a clean state.
-    try:
-        st.ultra()
-    except Exception as exc:  # noqa: BLE001 - never block startup on encoder
-        print(f"strata-server: encoder pre-load failed ({exc}); will retry lazily",
-              file=sys.stderr)
 
     @app.get("/health")
     def health():
