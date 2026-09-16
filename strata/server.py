@@ -8,6 +8,7 @@ INDEPENDENTLY of any host application. Extracted from the hivebench sidecar
   * persistence + lifecycle   conv-*.json store, LRU hives, reset/inspect/state
   * tuning surface            /v1/strata/defaults
   * curated OpenAI passthrough /v1/openai/{models,chat/completions}
+                              plus the Responses API shim /v1/openai/responses
                               (X-Strata-Conversation keyed; dsh / opencode /
                               any OpenAI client plugs in here)
   * provider config           /v1/provider/config (providers.local.json)
@@ -33,6 +34,7 @@ from __future__ import annotations
 import hashlib
 import json
 import os
+import secrets
 import sys
 import threading
 import time
@@ -100,6 +102,69 @@ def _list_models(base_url: str) -> list[str]:
     resp = requests.get(f"{base_url}/v1/models", timeout=10)
     resp.raise_for_status()
     return [m.get("id") for m in resp.json().get("data", []) if m.get("id")]
+
+
+def _responses_chat_payload(payload: dict) -> dict:
+    """Translate a Responses API request body into Chat Completions shape.
+
+    ``input`` (a string or a list of message items) becomes ``messages``; a
+    string is a single user turn. ``instructions`` prepends as the system
+    message, exactly where Chat Completions clients put their system prompt.
+    ``max_output_tokens`` maps to ``max_tokens``; temperature and stream ride
+    through unchanged.
+    """
+    raw = payload.get("input")
+    if isinstance(raw, str):
+        items: list = [{"type": "message", "role": "user", "content": raw}]
+    elif isinstance(raw, list):
+        items = raw
+    else:
+        items = []
+
+    messages: list[dict] = []
+    instructions = payload.get("instructions")
+    if isinstance(instructions, str) and instructions.strip():
+        messages.append({"role": "system", "content": instructions})
+    for item in items:
+        if not isinstance(item, dict) or item.get("type") not in (None, "message"):
+            continue
+        content = item.get("content")
+        if isinstance(content, list):
+            # Responses content parts (input_text / text) -> plain text.
+            content = "".join(
+                part.get("text", "") if isinstance(part, dict) else str(part)
+                for part in content
+            )
+        if not isinstance(content, str):
+            content = "" if content is None else str(content)
+        messages.append({"role": item.get("role") or "user", "content": content})
+
+    chat: dict = {"model": payload.get("model"), "messages": messages}
+    if payload.get("stream"):
+        chat["stream"] = True
+    if payload.get("temperature") is not None:
+        chat["temperature"] = payload["temperature"]
+    if payload.get("max_output_tokens") is not None:
+        chat["max_tokens"] = payload["max_output_tokens"]
+    return chat
+
+
+def _response_object(reply: str, model: str, usage: Optional[dict]) -> dict:
+    """Responses API envelope around a Chat Completions reply."""
+    return {
+        "id": "resp_" + secrets.token_hex(12),
+        "object": "response",
+        "model": model,
+        "output": [{
+            "type": "message",
+            "role": "assistant",
+            "content": [{"type": "output_text", "text": reply}],
+        }],
+        "usage": {
+            "input_tokens": int((usage or {}).get("prompt_tokens") or 0),
+            "output_tokens": int((usage or {}).get("completion_tokens") or 0),
+        },
+    }
 
 
 # ---------------------------------------------------------------------------
@@ -705,9 +770,32 @@ def create_app(
         return {"object": "list",
                 "data": [{"id": m, "object": "model"} for m in ids]}
 
-    @app.post("/v1/openai/chat/completions")
-    async def openai_chat_completions(request: Request):
-        payload = await request.json()
+    def _openai_conversation_key(payload: dict, request: Request) -> str:
+        """Conversation ID resolution (S5): header > model-name prefix >
+        user field > default.
+
+        Model-name prefix convention: "project-name:model-id" -> cid="project-name",
+        upstream model="model-id" (payload is mutated in place). Enables opencode
+        (no custom-header support) to pin conversations by project via its model
+        config.
+        """
+        model_name = payload.get("model") or ""
+        cid = request.headers.get("X-Strata-Conversation")
+        if not cid and ":" in model_name:
+            prefix, _, remainder = model_name.partition(":")
+            if prefix.strip() and remainder.strip():
+                cid = prefix.strip()
+                payload["model"] = remainder.strip()
+        return cid or (payload.get("user") or "") or "default"
+
+    def _openai_chat_context(payload: dict, request: Request) -> dict:
+        """Validate + curate one Chat Completions payload.
+
+        Shared by /v1/openai/chat/completions and the /v1/openai/responses
+        shim: query extraction, conversation keying, provider resolution,
+        memory curation, the upstream request build and the reply-observe
+        callback all live here, so the two wire formats cannot drift apart.
+        """
         messages = payload.get("messages") or []
         if not messages:
             raise HTTPException(422, "messages must not be empty")
@@ -719,20 +807,7 @@ def create_app(
                 break
         if not query.strip():
             raise HTTPException(422, "no user message with text content")
-        # Conversation ID resolution (S5): header > model-name prefix > user field > default.
-        # Model-name prefix convention: "project-name:model-id" -> cid="project-name",
-        # upstream model="model-id". Enables opencode (no custom-header support) to
-        # pin conversations by project via its model config.
-        model_name = payload.get("model") or ""
-        cid = request.headers.get("X-Strata-Conversation")
-        if not cid and ":" in model_name:
-            prefix, _, remainder = model_name.partition(":")
-            if prefix.strip() and remainder.strip():
-                cid = prefix.strip()
-                payload["model"] = remainder.strip()
-                model_name = remainder.strip()
-        if not cid:
-            cid = (payload.get("user") or "") or "default"
+        cid = _openai_conversation_key(payload, request)
         try:
             provider = st.registry.resolve(None)
         except LookupError:
@@ -810,50 +885,132 @@ def create_app(
                     st.save_conversation(cid, strata)
             return stored
 
-        if not stream:
+        return {"base_url": base_url, "headers": headers,
+                "upstream": upstream, "stream": stream, "observe": observe}
+
+    def _openai_chat_once(ctx: dict) -> dict:
+        """One non-stream upstream call; the reply is observed on the way out."""
+        resp = requests.post(
+            f"{ctx['base_url']}/v1/chat/completions", json=ctx["upstream"],
+            headers=ctx["headers"], timeout=600,
+        )
+        resp.raise_for_status()
+        data = resp.json()
+        try:
+            ctx["observe"](data["choices"][0]["message"]["content"] or "")
+        except (KeyError, IndexError):
+            pass
+        return data
+
+    def _openai_chat_chunks(ctx: dict):
+        """Yield ("chunk", parsed) per upstream SSE frame and ("done", None)
+        on [DONE]; ("error", exc) if the upstream call fails. The accumulated
+        reply is observed once the stream ends - the same contract the chat
+        endpoint always had, now shared with the Responses shim."""
+        parts: list[str] = []
+        try:
             resp = requests.post(
-                f"{base_url}/v1/chat/completions", json=upstream,
-                headers=headers, timeout=600,
+                f"{ctx['base_url']}/v1/chat/completions", json=ctx["upstream"],
+                headers=ctx["headers"], stream=True, timeout=600,
             )
             resp.raise_for_status()
-            data = resp.json()
+            for raw in resp.iter_lines(decode_unicode=True):
+                if not raw:
+                    continue
+                line = raw[6:].strip() if raw.startswith("data:") else raw.strip()
+                if not line:
+                    continue
+                if line == "[DONE]":
+                    yield "done", None
+                    break
+                try:
+                    chunk = json.loads(line)
+                except json.JSONDecodeError:
+                    continue
+                for choice in chunk.get("choices") or []:
+                    delta = choice.get("delta") or {}
+                    if delta.get("content"):
+                        parts.append(delta["content"])
+                yield "chunk", chunk
+        except Exception as exc:  # noqa: BLE001 - surfaced as an SSE error event
+            yield "error", exc
+        ctx["observe"]("".join(parts))
+
+    @app.post("/v1/openai/chat/completions")
+    async def openai_chat_completions(request: Request):
+        payload = await request.json()
+        ctx = _openai_chat_context(payload, request)
+        if not ctx["stream"]:
+            return _openai_chat_once(ctx)
+
+        def sse():
+            for kind, item in _openai_chat_chunks(ctx):
+                if kind == "chunk":
+                    yield "data: " + json.dumps(item) + "\n\n"
+                elif kind == "done":
+                    yield "data: [DONE]\n\n"
+                else:
+                    yield "data: " + json.dumps({
+                        "error": {"message": str(item),
+                                  "type": "strata_upstream_error"},
+                    }) + "\n\n"
+
+        return StreamingResponse(sse(), media_type="text/event-stream")
+
+    @app.post("/v1/openai/responses")
+    async def openai_responses(request: Request):
+        """Responses API shim (Unsloth Studio's openai provider type posts
+        here): translate input/instructions into the same Chat Completions
+        code path as /v1/openai/chat/completions - same providers, curation
+        and conversation keying - then translate the reply back."""
+        payload = await request.json()
+        chat_payload = _responses_chat_payload(payload)
+        ctx = _openai_chat_context(chat_payload, request)
+        model = chat_payload.get("model") or ""
+        if not ctx["stream"]:
+            data = _openai_chat_once(ctx)
+            reply = ""
             try:
-                observe(data["choices"][0]["message"]["content"] or "")
-            except (KeyError, IndexError):
+                reply = data["choices"][0]["message"]["content"] or ""
+            except (KeyError, IndexError, TypeError):
                 pass
-            return data
+            return _response_object(reply, model or data.get("model") or "",
+                                    data.get("usage"))
 
         def sse():
             parts: list[str] = []
-            try:
-                resp = requests.post(
-                    f"{base_url}/v1/chat/completions", json=upstream,
-                    headers=headers, stream=True, timeout=600,
-                )
-                resp.raise_for_status()
-                for raw in resp.iter_lines(decode_unicode=True):
-                    if not raw:
-                        continue
-                    line = raw[6:].strip() if raw.startswith("data:") else raw.strip()
-                    if not line:
-                        continue
-                    if line == "[DONE]":
-                        yield "data: [DONE]\n\n"
-                        break
-                    try:
-                        chunk = json.loads(line)
-                    except json.JSONDecodeError:
-                        continue
-                    for choice in chunk.get("choices") or []:
-                        delta = choice.get("delta") or {}
-                        if delta.get("content"):
-                            parts.append(delta["content"])
-                    yield "data: " + json.dumps(chunk) + "\n\n"
-            except Exception as exc:  # noqa: BLE001 - surfaced as an SSE error event
-                yield "data: " + json.dumps({
-                    "error": {"message": str(exc), "type": "strata_upstream_error"},
-                }) + "\n\n"
-            observe("".join(parts))
+            usage: dict = {}
+            resp_model = model
+            failed = False
+            for kind, item in _openai_chat_chunks(ctx):
+                if kind == "chunk":
+                    usage = item.get("usage") or usage
+                    resp_model = resp_model or item.get("model") or ""
+                    for choice in item.get("choices") or []:
+                        text = (choice.get("delta") or {}).get("content")
+                        if text:
+                            parts.append(text)
+                            yield ("event: response.output_text.delta\n"
+                                   "data: " + json.dumps({
+                                       "type": "response.output_text.delta",
+                                       "delta": text,
+                                   }) + "\n\n")
+                elif kind == "error":
+                    failed = True
+                    yield ("event: response.failed\n"
+                           "data: " + json.dumps({
+                               "type": "response.failed",
+                               "error": {"message": str(item),
+                                         "type": "strata_upstream_error"},
+                           }) + "\n\n")
+            if failed:
+                return
+            yield ("event: response.completed\n"
+                   "data: " + json.dumps({
+                       "type": "response.completed",
+                       "response": _response_object("".join(parts), resp_model,
+                                                    usage),
+                   }) + "\n\n")
 
         return StreamingResponse(sse(), media_type="text/event-stream")
 
