@@ -40,7 +40,10 @@ startup:
       "npm": "@ai-sdk/openai-compatible",
       "name": "Strata Memory (curated context)",
       "options": {
-        "baseURL": "http://127.0.0.1:8765/v1/openai"
+        "baseURL": "http://127.0.0.1:8765/v1/openai",
+        "headers": {
+          "X-Strata-Conversation": "my-project"
+        }
       },
       "models": {
         "prism-ml/bonsai-27b": {
@@ -53,6 +56,10 @@ startup:
   "model": "strata-memory/prism-ml/bonsai-27b"
 }
 ```
+
+The `X-Strata-Conversation` header pins all requests to a named conversation
+so context persists across sessions. Change the value per project for isolated
+memory stores, or omit it to use the shared `"default"` conversation.
 
 Select the model with `/models` (or set `model` in config). The model id must
 be one the studio's backend can serve (list them at
