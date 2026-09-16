@@ -230,6 +230,20 @@ Run from the sibling hivebench checkout: `python -m pytest tests/unit -q`, ~25 s
 
 ## Use the system in your own project
 
+**Works with any OpenAI-compatible harness.** Point opencode, Unsloth Studio,
+dsh, or your own tool at `http://localhost:8765/v1/openai/chat/completions` and
+every request gets curated context automatically. No code changes needed — just
+set the base URL and (optionally) an `X-Strata-Conversation` header for
+per-project memory isolation.
+
+Three integration modes, from zero-code to deep:
+
+1. **OpenAI-compatible swap** (minutes) — point any client at the sidecar endpoint
+2. **Python facade** — import `strata` directly into your application
+3. **dsh plugin** — deepest integration for the deepseek-harness fork
+
+Full details in [`docs/INTEGRATE.md`](docs/INTEGRATE.md).
+
 `strata/` is self-contained; it never imports from the bench or the harness:
 
 ```python
