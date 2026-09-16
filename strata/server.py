@@ -719,8 +719,20 @@ def create_app(
                 break
         if not query.strip():
             raise HTTPException(422, "no user message with text content")
-        cid = (request.headers.get("X-Strata-Conversation")
-               or (payload.get("user") or "") or "default")
+        # Conversation ID resolution (S5): header > model-name prefix > user field > default.
+        # Model-name prefix convention: "project-name:model-id" -> cid="project-name",
+        # upstream model="model-id". Enables opencode (no custom-header support) to
+        # pin conversations by project via its model config.
+        model_name = payload.get("model") or ""
+        cid = request.headers.get("X-Strata-Conversation")
+        if not cid and ":" in model_name:
+            prefix, _, remainder = model_name.partition(":")
+            if prefix.strip() and remainder.strip():
+                cid = prefix.strip()
+                payload["model"] = remainder.strip()
+                model_name = remainder.strip()
+        if not cid:
+            cid = (payload.get("user") or "") or "default"
         try:
             provider = st.registry.resolve(None)
         except LookupError:
