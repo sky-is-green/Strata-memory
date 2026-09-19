@@ -178,6 +178,7 @@ class Strata:
     def process_turn(
         self, query: str, conversation_id: Optional[str] = None, record_exchange: bool = True,
         payload_fingerprints: Optional[set] = None,
+        drift_prior: str = "off", drift_prior_factor: float = 0.5,
     ) -> TurnResult:
         self.turn += 1
 
@@ -212,6 +213,8 @@ class Strata:
                     dedup_against_payload=self.config.dedup_against_payload,
                     stale_threshold=self.config.stale_threshold,
                     stale_factor=self.config.stale_factor,
+                    drift_prior=drift_prior,
+                    drift_prior_factor=drift_prior_factor,
                 )
                 # Comb gate: consult the surplus tier only when the active
                 # store's best raw match is weak — normal turns pay zero comb
@@ -246,6 +249,8 @@ class Strata:
                             dedup_against_payload=self.config.dedup_against_payload,
                             stale_threshold=self.config.stale_threshold,
                             stale_factor=self.config.stale_factor,
+                            drift_prior=drift_prior,
+                            drift_prior_factor=drift_prior_factor,
                         )
                 timings.update(self.assembler.last_timings)
                 timings["assembly_total_ms"] = round((time.perf_counter() - t0) * 1000.0, 3)

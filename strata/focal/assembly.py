@@ -88,6 +88,10 @@ class AssembledContext:
 
 
 class ContextAssembler:
+    # Same content-word rule as Strata._comb_gate_fires: used to classify a
+    # chunk as a *query echo* (restates the user's own words, carries no facts).
+    _WORD_RE = re.compile(r"[a-z0-9]{4,}")
+
     def __init__(self, collect_timings: bool = False) -> None:
         self.collect_timings = collect_timings
         self.last_timings: dict = {}
@@ -118,6 +122,8 @@ class ContextAssembler:
         max_chunk_share: float = 0.5,
         stale_threshold: Optional[int] = None,
         stale_factor: Optional[float] = None,
+        drift_prior: str = "off",
+        drift_prior_factor: float = 0.5,
     ) -> AssembledContext:
         comb_candidates = comb_candidates or []
         comb_by_id = {c.id: c for c in comb_candidates}
@@ -183,7 +189,11 @@ class ContextAssembler:
         drift = drift_detector.check(recent, all_chunks, ultra_small)
         drift_penalties = {}
         if drift.should_reset:
-            drift_penalties = self._apply_drift_reset(surviving, recent)
+            drift_penalties = self._apply_drift_reset(
+                surviving, recent, query=query,
+                drift_prior=drift_prior,
+                drift_prior_factor=drift_prior_factor,
+            )
         self._tick("drift_ms", _t)
 
         # 5. Decay on surviving chunks (Retention); comb resurrections are
@@ -329,6 +339,43 @@ class ContextAssembler:
         return sum(estimate_tokens(c.content) for c in selected)
 
     @staticmethod
-    def _apply_drift_reset(surviving: list, recent: list) -> dict[str, float]:
+    def _is_query_echo(content: str, query: str) -> bool:
+        """A chunk is a *query echo* when >= 80% of its content words (the same
+        ``[a-z0-9]{4,}`` rule as ``Strata._comb_gate_fires``) also appear in the
+        query. Template-repeated question chunks restate the user's own words
+        and carry no facts, yet the vocab boost can push them to ~1.15."""
+        if not content or not query:
+            return False
+        cwords = set(ContextAssembler._WORD_RE.findall(content.lower()))
+        if not cwords:
+            return False
+        qwords = set(ContextAssembler._WORD_RE.findall(query.lower()))
+        if not qwords:
+            return False
+        return len(cwords & qwords) / len(cwords) >= 0.8
+
+    @staticmethod
+    def _apply_drift_reset(
+        surviving: list,
+        recent: list,
+        query: str = "",
+        drift_prior: str = "off",
+        drift_prior_factor: float = 0.5,
+    ) -> dict[str, float]:
+        """Drift-reset priors for the surviving set.
+
+        Default (``drift_prior="off"``) is the original recency split:
+        recent chunks x1.0, everything else x0.1. The P2 opt-in
+        ``drift_prior="downweight"`` instead *softly* down-weights a query
+        echo's drift contribution (x``drift_prior_factor``, never zero) so a
+        genuine fact can outrank a restated question.
+        """
         recent_ids = {c.id for c in recent}
-        return {c.id: (1.0 if c.id in recent_ids else 0.1) for c in surviving}
+        downweight = drift_prior == "downweight"
+        penalties: dict[str, float] = {}
+        for c in surviving:
+            weight = 1.0 if c.id in recent_ids else 0.1
+            if downweight and ContextAssembler._is_query_echo(c.content, query):
+                weight *= drift_prior_factor
+            penalties[c.id] = weight
+        return penalties
